@@ -37,25 +37,48 @@ NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/ring_buffer.cpp"
 NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/util.cpp"
 NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/wavenet.cpp"
 
+# Detect OS for platform-specific linking
+UNAME_S=$(uname -s)
+
 # Compile with NAM includes and VCV Rack SDK includes
-"$CXX" -std=c++17 -O2 -Wall \
-  -Isrc \
-  -I"$NAM_DIR" \
-  -I"$NAM_DIR/Dependencies/eigen" \
-  -I"$NAM_DIR/Dependencies/nlohmann" \
-  -Idep/Rack-SDK/include \
-  -Idep/Rack-SDK/dep/include \
-  -DSHORTWAV_DSP_RUN_TESTS \
-  -D_USE_MATH_DEFINES \
-  -o "$OUT_BIN" \
-  src/tests/test_swv_guitar_collection.cpp \
-  $NAM_SOURCES \
-  -Ldep/Rack-SDK \
-  -lRack \
-  -Wl,-rpath,@executable_path/../dep/Rack-SDK
+if [[ "$UNAME_S" == "MINGW"* || "$UNAME_S" == "MSYS"* ]]; then
+  # Windows: link directly to the library file
+  "$CXX" -std=c++17 -O2 -Wall \
+    -Isrc \
+    -I"$NAM_DIR" \
+    -I"$NAM_DIR/Dependencies/eigen" \
+    -I"$NAM_DIR/Dependencies/nlohmann" \
+    -Idep/Rack-SDK/include \
+    -Idep/Rack-SDK/dep/include \
+    -DSHORTWAV_DSP_RUN_TESTS \
+    -D_USE_MATH_DEFINES \
+    -o "$OUT_BIN" \
+    src/tests/test_swv_guitar_collection.cpp \
+    $NAM_SOURCES \
+    dep/Rack-SDK/libRack.a
+else
+  # macOS/Linux: use -L and -l flags
+  "$CXX" -std=c++17 -O2 -Wall \
+    -Isrc \
+    -I"$NAM_DIR" \
+    -I"$NAM_DIR/Dependencies/eigen" \
+    -I"$NAM_DIR/Dependencies/nlohmann" \
+    -Idep/Rack-SDK/include \
+    -Idep/Rack-SDK/dep/include \
+    -DSHORTWAV_DSP_RUN_TESTS \
+    -D_USE_MATH_DEFINES \
+    -o "$OUT_BIN" \
+    src/tests/test_swv_guitar_collection.cpp \
+    $NAM_SOURCES \
+    -Ldep/Rack-SDK \
+    -lRack \
+    -Wl,-rpath,@executable_path/../dep/Rack-SDK
+fi
 
 echo "Running tests..."
-export DYLD_LIBRARY_PATH="$(pwd)/dep/Rack-SDK:$DYLD_LIBRARY_PATH"
+if [[ "$UNAME_S" == "Darwin" ]]; then
+  export DYLD_LIBRARY_PATH="$(pwd)/dep/Rack-SDK:$DYLD_LIBRARY_PATH"
+fi
 if "$OUT_BIN"; then
   echo "Tests passed."
   exit 0
