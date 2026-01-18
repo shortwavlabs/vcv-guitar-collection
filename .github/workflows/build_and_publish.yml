@@ -87,13 +87,21 @@ jobs:
             mv "$SDK_DIR" dep/Rack-SDK
           fi
           echo "RACK_DIR=$(pwd)/dep/Rack-SDK" >> $GITHUB_ENV
-          # Debug: show what's in the SDK for troubleshooting
-          echo "SDK contents:"
-          ls -la dep/Rack-SDK/
-          if [ -d "dep/Rack-SDK/dep/lib" ]; then
-            echo "SDK dep/lib contents:"
-            ls -la dep/Rack-SDK/dep/lib/
-          fi
+          
+      # ------------------------------------------------------------------------
+      # Download Rack Runtime (Windows only - for tests)
+      # ------------------------------------------------------------------------
+      - name: Download Rack Runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "Downloading VCV Rack for Windows to get runtime DLL..."
+          curl -L -o Rack-win.zip "https://vcvrack.com/downloads/Rack-latest-win-x64.zip"
+          unzip -q Rack-win.zip
+          # Find and copy Rack.dll to SDK location for tests
+          find . -maxdepth 3 -name "Rack.dll" -exec cp {} dep/Rack-SDK/ \;
+          echo "Rack.dll location:"
+          find dep/Rack-SDK -name "Rack.dll"
 
       # ------------------------------------------------------------------------
       # Run Tests
@@ -102,15 +110,6 @@ jobs:
         shell: bash
         run: |
           chmod +x ./run_tests.sh
-          # Debug on Windows: check for DLL files
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            echo "Looking for DLL files..."
-            find dep/Rack-SDK -type f \( -name "*.dll" -o -name "Rack.dll" -o -name "libRack.dll" \) 2>/dev/null || echo "No DLL files found"
-            echo "Checking SDK structure:"
-            ls -la dep/Rack-SDK/ | head -20
-            echo "Checking SDK dep folder:"
-            ls -la dep/Rack-SDK/dep/ 2>/dev/null || echo "No dep folder"
-          fi
           ./run_tests.sh
 
       # ------------------------------------------------------------------------
