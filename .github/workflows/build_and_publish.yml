@@ -134,7 +134,10 @@ jobs:
         run: |
           # Set RACK_DIR using MSYS2 path format
           export RACK_DIR="$(cygpath -u "$GITHUB_WORKSPACE")/dep/Rack-SDK"
+          # Set ARCH explicitly for Windows to prevent SDK from detecting macOS
+          export ARCH=win
           echo "RACK_DIR=$RACK_DIR"
+          echo "ARCH=$ARCH"
           make dep
           make dist
 
