@@ -95,13 +95,17 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          echo "Downloading VCV Rack for Windows to get runtime DLL..."
-          curl -L -o Rack-win.zip "https://vcvrack.com/downloads/Rack-latest-win-x64.zip"
-          unzip -q Rack-win.zip
-          # Find and copy Rack.dll to SDK location for tests
-          find . -maxdepth 3 -name "Rack.dll" -exec cp {} dep/Rack-SDK/ \;
-          echo "Rack.dll location:"
-          find dep/Rack-SDK -name "Rack.dll"
+          echo "Downloading VCV Rack installer for Windows to get runtime DLL..."
+          curl -L -o RackFree.exe "https://vcvrack.com/downloads/RackFree-latest-win-x64.exe"
+          # Use 7zip to extract the installer
+          7z x RackFree.exe -o"RackExtracted" -y
+          # Copy runtime DLLs to SDK location for tests
+          cp RackExtracted/libRack.dll dep/Rack-SDK/ || echo "Failed to copy libRack.dll"
+          cp RackExtracted/libgcc_s_seh-1.dll dep/Rack-SDK/ || echo "Failed to copy libgcc_s_seh-1.dll"
+          cp RackExtracted/libstdc++-6.dll dep/Rack-SDK/ || echo "Failed to copy libstdc++-6.dll"
+          cp RackExtracted/libwinpthread-1.dll dep/Rack-SDK/ || echo "Failed to copy libwinpthread-1.dll"
+          echo "DLLs copied to SDK:"
+          ls -la dep/Rack-SDK/*.dll
 
       # ------------------------------------------------------------------------
       # Run Tests
