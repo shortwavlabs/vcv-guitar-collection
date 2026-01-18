@@ -1,12 +1,20 @@
 {
   "slug": "swv-guitar-collection",
-  "name": "Guitar Collection",
+  "name": "SWV Guitar Collection",
   "version": "2.0.0",
   "license": "GPL-3.0-or-later",
   "brand": "Shortwav Labs",
   "author": "Stephane Pericat",
   "authorEmail": "contact@shortwavlabs.com",
-  "sourceUrl": "https://github.com/shortwavlabs/vcv-guitar-collection/tree/main/src",
+  "sourceUrl": "https://github.com/shortwavlabs/swv-guitar-collection",
   "donateUrl": "https://ko-fi.com/shortwavlabs",
-  "modules": []
+  "minRackVersion": "2.6.0",
+  "modules": [
+    {
+      "slug": "NamPlayer",
+      "name": "NAM Player",
+      "description": "Neural Amp Modeler player for guitar amp simulation with noise gate and 5-band EQ",
+      "tags": ["Effect", "Distortion", "Equalizer", "Hardware Clone"]
+    }
+  ]
 }

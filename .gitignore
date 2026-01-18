@@ -1,5 +1,5 @@
 /build
-/dep
+/dep/Rack-SDK
 /dist
 /plugin.so
 /plugin.dylib
