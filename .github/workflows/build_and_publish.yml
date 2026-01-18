@@ -87,6 +87,13 @@ jobs:
             mv "$SDK_DIR" dep/Rack-SDK
           fi
           echo "RACK_DIR=$(pwd)/dep/Rack-SDK" >> $GITHUB_ENV
+          # Debug: show what's in the SDK for troubleshooting
+          echo "SDK contents:"
+          ls -la dep/Rack-SDK/
+          if [ -d "dep/Rack-SDK/dep/lib" ]; then
+            echo "SDK dep/lib contents:"
+            ls -la dep/Rack-SDK/dep/lib/
+          fi
 
       # ------------------------------------------------------------------------
       # Run Tests
