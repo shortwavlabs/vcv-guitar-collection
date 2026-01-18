@@ -2,7 +2,13 @@
 
 ## Overview
 
-This document provides a step-by-step implementation plan for creating a Neural Amp Modeler module for VCV Rack 2.x.
+This document provides a step-by-step implementation plan for creating a Neural Amp Modeler module for VCV Rack 2.6.x and up.
+
+### Target Platform
+
+- **Primary Development:** macOS ARM64 (Apple Silicon)
+- **Supported Platforms:** macOS, Windows, Linux (via GitHub Actions CI)
+- **VCV Rack Version:** 2.6.x and up
 
 ---
 
@@ -48,9 +54,11 @@ FLAGS += -I$(NAM_DIR)/Dependencies/nlohmann
 # C++17 required for NAM
 CXXFLAGS += -std=c++17
 
-# Eigen configuration - disable vectorization for stability
-FLAGS += -DEIGEN_MAX_ALIGN_BYTES=0
-FLAGS += -DEIGEN_DONT_VECTORIZE
+# Eigen configuration - use aligned allocation for performance
+# We use proper EIGEN_MAKE_ALIGNED_OPERATOR_NEW in classes containing Eigen types
+# Fallback: uncomment these lines if alignment issues occur
+# FLAGS += -DEIGEN_MAX_ALIGN_BYTES=0
+# FLAGS += -DEIGEN_DONT_VECTORIZE
 
 # NAM source files
 NAM_SOURCES := $(NAM_DIR)/NAM/activations.cpp
@@ -85,49 +93,129 @@ make -j$(nproc)
 
 ## Phase 2: Core Module Implementation (4-6 hours)
 
-### 2.1 Create Module Header
+### 2.1 Create DSP Abstraction Layer
 
-**File:** `src/NAMPlayer.hpp`
+**File:** `src/dsp/Nam.h`
+
+This header contains the NAM DSP wrapper with resampling support and proper Eigen alignment.
+
+```cpp
+#pragma once
+
+#include "NAM/dsp.h"
+#include "NAM/get_dsp.h"
+#include "NAM/activations.h"
+#include <samplerate.h>
+
+#include <memory>
+#include <vector>
+#include <string>
+#include <Eigen/Dense>
+
+/**
+ * NamDSP - Wrapper for Neural Amp Modeler DSP with resampling support
+ * 
+ * Handles:
+ * - Model loading and management
+ * - Sample rate conversion (engine rate <-> model rate)
+ * - Proper Eigen memory alignment
+ * - Thread-safe model swapping
+ * - Passthrough when no model loaded
+ * - CPU usage monitoring
+ */
+class NamDSP {
+public:
+    // Eigen alignment macro for classes containing Eigen types
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    
+    static constexpr int BLOCK_SIZE = 128;
+    static constexpr int MAX_RESAMPLE_RATIO = 8;  // Support up to 8x resampling
+    
+    NamDSP();
+    ~NamDSP();
+    
+    // Model management
+    bool loadModel(const std::string& path);
+    void unloadModel();
+    bool isModelLoaded() const { return model != nullptr; }
+    double getModelSampleRate() const;
+    std::string getModelPath() const { return modelPath; }
+    std::string getModelName() const;  // Returns filename without extension
+    
+    // Processing
+    void setSampleRate(double rate);
+    void process(const float* input, float* output, int numFrames);
+    void reset();
+    
+    // Monitoring
+    float getCpuLoad() const { return cpuLoad; }  // 0.0 to 1.0
+    bool isSampleRateMismatched() const { return std::abs(engineSampleRate - modelSampleRate) > 1.0; }
+    
+private:
+    std::unique_ptr<nam::DSP> model;
+    std::string modelPath;
+    
+    // Resampling state
+    SRC_STATE* srcIn = nullptr;
+    SRC_STATE* srcOut = nullptr;
+    double engineSampleRate = 48000.0;
+    double modelSampleRate = 48000.0;
+    
+    // CPU monitoring
+    float cpuLoad = 0.f;
+    
+    // Pre-allocated buffers for resampling
+    std::vector<float> resampleInBuffer;
+    std::vector<float> resampleOutBuffer;
+    std::vector<double> modelInputBuffer;
+    std::vector<double> modelOutputBuffer;
+    
+    void initResampling();
+    void cleanupResampling();
+};
+```
+
+### 2.2 Create Module Header
+
+**File:** `src/NamPlayer.hpp`
 
 ```cpp
 #pragma once
 
 #include "plugin.hpp"
-#include "NAM/dsp.h"
-#include "NAM/get_dsp.h"
-#include "NAM/activations.h"
+#include "dsp/Nam.h"
 
 #include <memory>
 #include <atomic>
 #include <thread>
 #include <mutex>
 
-struct NAMPlayer : Module {
+struct NamPlayer : Module {
     enum ParamId {
         INPUT_PARAM,
         OUTPUT_PARAM,
         PARAMS_LEN
     };
     enum InputId {
-        AUDIO_INPUT,
+        AUDIO_INPUT,  // Mono input
         INPUTS_LEN
     };
     enum OutputId {
-        AUDIO_OUTPUT,
+        AUDIO_OUTPUT,  // Mono output
         OUTPUTS_LEN
     };
     enum LightId {
         MODEL_LIGHT,
+        SAMPLE_RATE_LIGHT,  // Indicates sample rate mismatch
         LIGHTS_LEN
     };
 
     // Constants
     static constexpr int BLOCK_SIZE = 128;
     
-    // NAM model
-    std::unique_ptr<nam::DSP> model;
-    std::string modelPath;
-    std::mutex modelMutex;
+    // NAM DSP wrapper (handles resampling internally)
+    std::unique_ptr<NamDSP> namDsp;
+    std::mutex dspMutex;
     
     // Async loading
     std::thread loadThread;
@@ -135,36 +223,47 @@ struct NAMPlayer : Module {
     std::atomic<bool> loadSuccess{false};
     
     // Audio buffers (pre-allocated)
-    std::vector<double> inputBuffer;
-    std::vector<double> outputBuffer;
+    std::vector<float> inputBuffer;
+    std::vector<float> outputBuffer;
     int bufferPos = 0;
     
-    // Sample rate handling
+    // Sample rate
     double currentSampleRate = 48000.0;
-    double modelSampleRate = 48000.0;
     
-    NAMPlayer();
-    ~NAMPlayer();
+    // CPU monitoring (for display)
+    float cpuLoad = 0.f;
+    
+    NamPlayer();
+    ~NamPlayer();
     
     void process(const ProcessArgs& args) override;
     void onSampleRateChange(const SampleRateChangeEvent& e) override;
     
     void loadModel(const std::string& path);
     void unloadModel();
+    std::string getModelPath() const;
+    std::string getModelName() const;
+    bool isSampleRateMismatched() const;
     
     json_t* dataToJson() override;
     void dataFromJson(json_t* rootJ) override;
 };
+
+struct NamPlayerWidget : ModuleWidget {
+    NamPlayerWidget(NamPlayer* module);
+    void appendContextMenu(Menu* menu) override;
+};
 ```
 
-### 2.2 Create Module Implementation
+### 2.3 Create Module Implementation
 
-**File:** `src/NAMPlayer.cpp`
+**File:** `src/NamPlayer.cpp`
 
 ```cpp
-#include "NAMPlayer.hpp"
+#include "NamPlayer.hpp"
+#include <osdialog.h>
 
-NAMPlayer::NAMPlayer() {
+NamPlayer::NamPlayer() {
     config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
     
     configParam(INPUT_PARAM, 0.f, 2.f, 1.f, "Input Level");
@@ -173,69 +272,82 @@ NAMPlayer::NAMPlayer() {
     configInput(AUDIO_INPUT, "Audio");
     configOutput(AUDIO_OUTPUT, "Audio");
     
+    // Initialize DSP wrapper
+    namDsp = std::make_unique<NamDSP>();
+    
     // Pre-allocate buffers
-    inputBuffer.resize(BLOCK_SIZE, 0.0);
-    outputBuffer.resize(BLOCK_SIZE, 0.0);
+    inputBuffer.resize(BLOCK_SIZE, 0.f);
+    outputBuffer.resize(BLOCK_SIZE, 0.f);
     
     // Enable fast tanh for better performance
     nam::activations::Activation::enable_fast_tanh();
 }
 
-NAMPlayer::~NAMPlayer() {
+NamPlayer::~NamPlayer() {
     // Wait for any loading thread to finish
     if (loadThread.joinable()) {
         loadThread.join();
     }
 }
 
-void NAMPlayer::process(const ProcessArgs& args) {
-    // Check if model is loaded
-    if (!model || isLoading) {
-        outputs[AUDIO_OUTPUT].setVoltage(0.f);
+void NamPlayer::process(const ProcessArgs& args) {
+    // Get input with gain (line-level normalization: ±5V -> ±1.0)
+    float inputGain = params[INPUT_PARAM].getValue();
+    float input = inputs[AUDIO_INPUT].getVoltage() / 5.f * inputGain;
+    
+    // Check if model is loaded - passthrough if not
+    if (!namDsp || !namDsp->isModelLoaded() || isLoading) {
+        // Passthrough: output = input (with gain applied)
+        float outputGain = params[OUTPUT_PARAM].getValue();
+        outputs[AUDIO_OUTPUT].setVoltage(input * outputGain * 5.f);
+        
         lights[MODEL_LIGHT].setBrightness(isLoading ? 0.5f : 0.f);
+        lights[SAMPLE_RATE_LIGHT].setBrightness(0.f);
         return;
     }
     
     // Model loaded indicator
     lights[MODEL_LIGHT].setBrightness(1.f);
     
-    // Get input with gain
-    float inputGain = params[INPUT_PARAM].getValue();
-    float input = inputs[AUDIO_INPUT].getVoltage() / 5.f * inputGain;
+    // Sample rate mismatch indicator
+    lights[SAMPLE_RATE_LIGHT].setBrightness(namDsp->isSampleRateMismatched() ? 1.f : 0.f);
+    
+    // Update CPU load for display
+    cpuLoad = namDsp->getCpuLoad();
     
     // Accumulate input
-    inputBuffer[bufferPos] = static_cast<double>(input);
+    inputBuffer[bufferPos] = input;
     
     // Get output from previous block
-    float output = static_cast<float>(outputBuffer[bufferPos]);
+    float output = outputBuffer[bufferPos];
     
     // Advance position
     bufferPos++;
     
     // Process when buffer is full
     if (bufferPos >= BLOCK_SIZE) {
-        std::lock_guard<std::mutex> lock(modelMutex);
-        if (model) {
-            model->process(inputBuffer.data(), outputBuffer.data(), BLOCK_SIZE);
+        std::lock_guard<std::mutex> lock(dspMutex);
+        if (namDsp && namDsp->isModelLoaded()) {
+            namDsp->process(inputBuffer.data(), outputBuffer.data(), BLOCK_SIZE);
         }
         bufferPos = 0;
     }
     
-    // Apply output gain and send
+    // Apply output gain and send (scale back to ±5V)
     float outputGain = params[OUTPUT_PARAM].getValue();
     outputs[AUDIO_OUTPUT].setVoltage(output * outputGain * 5.f);
 }
 
-void NAMPlayer::onSampleRateChange(const SampleRateChangeEvent& e) {
+void NamPlayer::onSampleRateChange(const SampleRateChangeEvent& e) {
     currentSampleRate = e.sampleRate;
     
-    std::lock_guard<std::mutex> lock(modelMutex);
-    if (model) {
-        model->Reset(currentSampleRate, BLOCK_SIZE);
+    std::lock_guard<std::mutex> lock(dspMutex);
+    if (namDsp) {
+        namDsp->setSampleRate(currentSampleRate);
     }
 }
 
-void NAMPlayer::loadModel(const std::string& path) {
+void NamPlayer::loadModel(const std::string& path) {
     // Don't start new load if already loading
     if (isLoading) {
         return;
@@ -251,19 +363,16 @@ void NAMPlayer::loadModel(const std::string& path) {
     
     loadThread = std::thread([this, path]() {
         try {
-            auto newModel = nam::get_dsp(path);
+            auto newDsp = std::make_unique<NamDSP>();
             
-            if (newModel) {
-                // Initialize model
-                newModel->Reset(currentSampleRate, BLOCK_SIZE);
-                newModel->prewarm();
+            if (newDsp->loadModel(path)) {
+                // Initialize with current sample rate
+                newDsp->setSampleRate(currentSampleRate);
                 
-                // Swap model
+                // Swap DSP
                 {
-                    std::lock_guard<std::mutex> lock(modelMutex);
-                    model = std::move(newModel);
-                    modelPath = path;
-                    modelSampleRate = model->GetExpectedSampleRate();
+                    std::lock_guard<std::mutex> lock(dspMutex);
+                    namDsp = std::move(newDsp);
                 }
                 
                 loadSuccess = true;
@@ -277,19 +386,28 @@ void NAMPlayer::loadModel(const std::string& path) {
     });
 }
 
-void NAMPlayer::unloadModel() {
-    std::lock_guard<std::mutex> lock(modelMutex);
-    model.reset();
-    modelPath.clear();
+void NamPlayer::unloadModel() {
+    std::lock_guard<std::mutex> lock(dspMutex);
+    if (namDsp) {
+        namDsp->unloadModel();
+    }
 }
 
-json_t* NAMPlayer::dataToJson() {
+std::string NamPlayer::getModelPath() const {
+    if (namDsp) {
+        return namDsp->getModelPath();
+    }
+    return "";
+}
+
+json_t* NamPlayer::dataToJson() {
     json_t* rootJ = json_object();
-    json_object_set_new(rootJ, "modelPath", json_string(modelPath.c_str()));
+    std::string path = getModelPath();
+    json_object_set_new(rootJ, "modelPath", json_string(path.c_str()));
     return rootJ;
 }
 
-void NAMPlayer::dataFromJson(json_t* rootJ) {
+void NamPlayer::dataFromJson(json_t* rootJ) {
     json_t* pathJ = json_object_get(rootJ, "modelPath");
     if (pathJ) {
         std::string path = json_string_value(pathJ);
@@ -300,68 +418,91 @@ void NAMPlayer::dataFromJson(json_t* rootJ) {
 }
 ```
 
-### 2.3 Create Module Widget
+### 2.4 Create Module Widget (in NamPlayer.cpp)
 
-**File:** `src/NAMPlayerWidget.cpp`
+Add to `src/NamPlayer.cpp`:
 
 ```cpp
-#include "NAMPlayer.hpp"
+// Widget implementation
+NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
+    setModule(module);
+    setPanel(createPanel(asset::plugin(pluginInstance, "res/NamPlayer.svg")));
 
-struct NAMPlayerWidget : ModuleWidget {
-    NAMPlayerWidget(NAMPlayer* module) {
-        setModule(module);
-        setPanel(createPanel(asset::plugin(pluginInstance, "res/NAMPlayer.svg")));
+    // Module is 21HP = 106.68mm wide
+    // Panel based on SWV_21HP_PANEL.svg template
+    
+    // Screws (4 corners)
+    addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
+    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+    addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        // Screws
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+    // Parameters - spread across 21HP panel
+    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(26.67, 46.0)), module, NamPlayer::INPUT_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(80.01, 46.0)), module, NamPlayer::OUTPUT_PARAM));
 
-        // Parameters
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.16, 46.0)), module, NAMPlayer::INPUT_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.16, 71.0)), module, NAMPlayer::OUTPUT_PARAM));
+    // Mono inputs/outputs
+    addInput(createInputCentered<PJ301MPort>(mm2px(Vec(26.67, 96.0)), module, NamPlayer::AUDIO_INPUT));
+    addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(80.01, 96.0)), module, NamPlayer::AUDIO_OUTPUT));
 
-        // Inputs
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.16, 96.0)), module, NAMPlayer::AUDIO_INPUT));
+    // Lights
+    addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(53.34, 21.0)), module, NamPlayer::MODEL_LIGHT));
+    addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(58.0, 21.0)), module, NamPlayer::SAMPLE_RATE_LIGHT));
+    
+    // Custom displays (see custom widget implementations):
+    // - ModelNameDisplay: shows loaded model name (center)
+    // - CpuMeter: shows CPU usage percentage
+}
 
-        // Outputs
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(10.16, 116.0)), module, NAMPlayer::AUDIO_OUTPUT));
+void NamPlayerWidget::appendContextMenu(Menu* menu) {
+    NamPlayer* module = dynamic_cast<NamPlayer*>(this->module);
+    if (!module) return;
 
-        // Lights
-        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(10.16, 21.0)), module, NAMPlayer::MODEL_LIGHT));
-    }
-
-    void appendContextMenu(Menu* menu) override {
-        NAMPlayer* module = dynamic_cast<NAMPlayer*>(this->module);
-        if (!module) return;
-
-        menu->addChild(new MenuSeparator());
+    menu->addChild(new MenuSeparator());
+    
+    // Submenu for bundled models (from res/models/)
+    menu->addChild(createSubmenuItem("Bundled Models", "", [=](Menu* submenu) {
+        std::string modelsDir = asset::plugin(pluginInstance, "res/models");
+        std::vector<std::string> modelFiles = system::getEntries(modelsDir);
         
-        menu->addChild(createMenuItem("Load NAM Model...", "", [=]() {
-            char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, 
-                osdialog_filters_parse("NAM Models:nam"));
-            if (path) {
-                module->loadModel(path);
-                free(path);
+        for (const std::string& file : modelFiles) {
+            if (system::getExtension(file) == ".nam") {
+                std::string name = system::getStem(file);
+                submenu->addChild(createMenuItem(name, "", [=]() {
+                    module->loadModel(file);
+                }));
             }
-        }));
+        }
+    }));
+    
+    // File picker for custom models
+    menu->addChild(createMenuItem("Load Custom Model...", "", [=]() {
+        char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, 
+            osdialog_filters_parse("NAM Models:nam"));
+        if (path) {
+            module->loadModel(path);
+            free(path);
+        }
+    }));
 
-        menu->addChild(createMenuItem("Unload Model", "", [=]() {
-            module->unloadModel();
-        }, !module->model));
+    menu->addChild(createMenuItem("Unload Model", "", [=]() {
+        module->unloadModel();
+    }, !module->namDsp || !module->namDsp->isModelLoaded()));
 
-        if (!module->modelPath.empty()) {
-            menu->addChild(new MenuSeparator());
-            menu->addChild(createMenuLabel("Model: " + system::getFilename(module->modelPath)));
+    std::string modelName = module->getModelName();
+    if (!modelName.empty()) {
+        menu->addChild(new MenuSeparator());
+        menu->addChild(createMenuLabel("Model: " + modelName));
+        if (module->isSampleRateMismatched()) {
+            menu->addChild(createMenuLabel("⚠ Sample rate mismatch (resampling active)"));
         }
     }
-};
+}
 
-Model* modelNAMPlayer = createModel<NAMPlayer, NAMPlayerWidget>("NAMPlayer");
+Model* modelNamPlayer = createModel<NamPlayer, NamPlayerWidget>("NamPlayer");
 ```
 
-### 2.4 Register Module
+### 2.5 Register Module
 
 **File:** `src/plugin.cpp` (update)
 
@@ -373,7 +514,7 @@ Plugin* pluginInstance;
 void init(Plugin* p) {
     pluginInstance = p;
 
-    p->addModel(modelNAMPlayer);
+    p->addModel(modelNamPlayer);
 }
 ```
 
@@ -387,10 +528,10 @@ using namespace rack;
 
 extern Plugin* pluginInstance;
 
-extern Model* modelNAMPlayer;
+extern Model* modelNamPlayer;
 ```
 
-### 2.5 Update plugin.json
+### 2.6 Update plugin.json
 
 ```json
 {
@@ -407,9 +548,10 @@ extern Model* modelNAMPlayer;
   "sourceUrl": "https://github.com/shortwavlabs/swv-guitar-collection",
   "donateUrl": "",
   "changelogUrl": "",
+  "minRackVersion": "2.6.0",
   "modules": [
     {
-      "slug": "NAMPlayer",
+      "slug": "NamPlayer",
       "name": "NAM Player",
       "description": "Neural Amp Modeler player for guitar amp simulation",
       "tags": ["Effect", "Distortion", "Hardware Clone"]
@@ -424,12 +566,13 @@ extern Model* modelNAMPlayer;
 
 ### 3.1 Create SVG Panel
 
-Create `res/NAMPlayer.svg` with:
-- Module width: 4HP (20.32mm)
+Create `res/NamPlayer.svg` with:
+- Module width: 21HP (106.68mm)
 - Standard Rack panel dimensions
 - Labels for INPUT/OUTPUT knobs
 - Model indicator light
 - Input/Output port labels
+- Space for model name display (future)
 
 Recommended tools:
 - Inkscape
@@ -439,46 +582,94 @@ Recommended tools:
 ### 3.2 Panel Specifications
 
 ```
-Width: 4HP = 20.32mm
+Width: 21HP = 106.68mm
 Height: 128.5mm (standard 3U)
+Template: Based on SWV_21HP_PANEL.svg
 
-Elements (from top to bottom):
-- Model indicator light: y=21mm
-- INPUT knob: y=46mm  
-- OUTPUT knob: y=71mm
-- Audio In port: y=96mm
-- Audio Out port: y=116mm
+Elements (positioned for 21HP):
+- Model indicator light: x=53.34mm (centered), y=21mm (green)
+- Sample rate indicator: x=58mm, y=21mm (yellow, shows when resampling)
+- Model name display: center area, y=32-40mm
+- CPU meter: center area, y=60-65mm
+- INPUT knob: x=26.67mm, y=46mm  
+- OUTPUT knob: x=80.01mm, y=46mm
+- Audio In port (mono): x=26.67mm, y=96mm
+- Audio Out port (mono): x=80.01mm, y=96mm
+
+Labels:
+- "INPUT" above input knob
+- "OUTPUT" above output knob
+- "IN" below input port
+- "OUT" below output port
+- "NAM PLAYER" at top
 ```
 
 ---
 
-## Phase 4: Sample Rate Conversion (2-3 hours)
+## Phase 4: Sample Rate Conversion (Integrated)
 
-### 4.1 Add Resampling Support
+### 4.1 Resampling in NamDSP
 
-If models require specific sample rates, implement resampling using VCV's libsamplerate:
+Resampling is implemented from the start in the `NamDSP` wrapper class (`src/dsp/Nam.h`).
 
-**File:** `src/Resampler.hpp`
+The wrapper handles:
+- Automatic detection of model sample rate vs engine sample rate
+- Upsampling input to model rate when needed
+- Downsampling output back to engine rate
+- Pre-allocated buffers to avoid audio thread allocations
+
+**Implementation in `src/dsp/Nam.h`:**
 
 ```cpp
-#pragma once
-#include <samplerate.h>
-#include <vector>
-
-class Resampler {
-public:
-    Resampler() = default;
-    ~Resampler();
+void NamDSP::process(const float* input, float* output, int numFrames) {
+    if (!model) return;
     
-    void init(double srcRate, double dstRate, int quality = SRC_SINC_MEDIUM_QUALITY);
-    void reset();
-    void process(const float* in, float* out, int numFrames, int& outFrames);
+    // Check if resampling is needed
+    double ratio = modelSampleRate / engineSampleRate;
     
-private:
-    SRC_STATE* state = nullptr;
-    double ratio = 1.0;
-    std::vector<float> buffer;
-};
+    if (std::abs(ratio - 1.0) < 0.001) {
+        // No resampling needed - direct processing
+        for (int i = 0; i < numFrames; i++) {
+            modelInputBuffer[i] = static_cast<double>(input[i]);
+        }
+        model->process(modelInputBuffer.data(), modelOutputBuffer.data(), numFrames);
+        for (int i = 0; i < numFrames; i++) {
+            output[i] = static_cast<float>(modelOutputBuffer[i]);
+        }
+    } else {
+        // Resampling required
+        int resampledFrames = static_cast<int>(numFrames * ratio) + 1;
+        
+        // Upsample input to model rate
+        SRC_DATA srcData;
+        srcData.data_in = input;
+        srcData.input_frames = numFrames;
+        srcData.data_out = resampleInBuffer.data();
+        srcData.output_frames = resampledFrames;
+        srcData.src_ratio = ratio;
+        src_process(srcIn, &srcData);
+        
+        // Convert to double and process
+        for (int i = 0; i < srcData.output_frames_gen; i++) {
+            modelInputBuffer[i] = static_cast<double>(resampleInBuffer[i]);
+        }
+        model->process(modelInputBuffer.data(), modelOutputBuffer.data(), srcData.output_frames_gen);
+        
+        // Convert back to float
+        for (int i = 0; i < srcData.output_frames_gen; i++) {
+            resampleOutBuffer[i] = static_cast<float>(modelOutputBuffer[i]);
+        }
+        
+        // Downsample output to engine rate
+        SRC_DATA srcDataOut;
+        srcDataOut.data_in = resampleOutBuffer.data();
+        srcDataOut.input_frames = srcData.output_frames_gen;
+        srcDataOut.data_out = output;
+        srcDataOut.output_frames = numFrames;
+        srcDataOut.src_ratio = 1.0 / ratio;
+        src_process(srcOut, &srcDataOut);
+    }
+}
 ```
 
 ---

@@ -98,12 +98,10 @@ FLAGS += -I$(NAM_DIR)/Dependencies/nlohmann
 # C++ standard (NAM requires C++17 or later)
 CXXFLAGS += -std=c++17
 
-# Eigen alignment options (see Risk Assessment for details)
-# Option 1: Safe but slower - disable vectorization
+# Eigen alignment options
+# Using aligned allocation for performance (EIGEN_MAKE_ALIGNED_OPERATOR_NEW in classes)
+# Fallback: uncomment these lines if alignment issues occur on specific platforms
 # FLAGS += -DEIGEN_MAX_ALIGN_BYTES=0 -DEIGEN_DONT_VECTORIZE
-
-# Option 2: Performance mode - require proper alignment
-# No additional flags needed, but use EIGEN_MAKE_ALIGNED_OPERATOR_NEW in classes
 
 # NAM source files
 NAM_SOURCES := $(wildcard $(NAM_DIR)/NAM/*.cpp)
@@ -151,14 +149,33 @@ swv-guitar-collection/
 │           └── ...
 ├── docs/
 ├── res/
-│   └── NAMPlayer.svg            # Module panel
+│   ├── NamPlayer.svg            # Module panel (21HP, based on SWV_21HP_PANEL.svg)
+│   └── models/                   # All bundled NAM models from pelennor2170/NAM_models
+│       └── *.nam
 ├── src/
+│   ├── dsp/
+│   │   └── Nam.h                 # NAM DSP abstraction (resampling, alignment, CPU monitoring)
 │   ├── plugin.cpp
 │   ├── plugin.hpp
-│   └── NAMPlayer.cpp            # NAM module implementation
+│   ├── NamPlayer.hpp            # NAM module header
+│   └── NamPlayer.cpp            # NAM module implementation + widget (mono I/O)
 ├── Makefile
 └── plugin.json
 ```
+
+## Bundled Models
+
+The plugin ships with all NAM models from:
+https://github.com/pelennor2170/NAM_models
+
+These are placed in `res/models/` and included in the distribution.
+
+**Model Loading:**
+- **Submenu:** Right-click menu lists all bundled models for quick selection
+- **File picker:** "Load Custom Model..." for user's own `.nam` files
+- **Empty state:** When no model is loaded, module acts as passthrough
+
+**Note:** Full model collection bundled initially; may be trimmed if distribution size becomes an issue.
 
 ## Updating Dependencies
 
@@ -192,9 +209,10 @@ git commit -m "Update Eigen"
 When including NAM headers in your module:
 
 ```cpp
-// Before including NAM headers, configure Eigen if needed
-// #define EIGEN_MAX_ALIGN_BYTES 0
-// #define EIGEN_DONT_VECTORIZE
+// In src/dsp/Nam.h - the DSP abstraction layer
+
+// Eigen must be included with proper alignment support
+#include <Eigen/Dense>
 
 #include "NAM/dsp.h"
 #include "NAM/get_dsp.h"
@@ -202,8 +220,26 @@ When including NAM headers in your module:
 // For faster tanh approximation (recommended for real-time)
 #include "NAM/activations.h"
 
+// Classes containing Eigen types must use this macro
+class NamDSP {
+public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW  // Required for proper Eigen alignment
+    
+    // ... class members
+};
+
 // In initialization:
 nam::activations::Activation::enable_fast_tanh();
+```
+
+### Eigen Alignment Strategy
+
+We use the aligned allocation approach (EIGEN_MAKE_ALIGNED_OPERATOR_NEW) for performance.
+If alignment issues occur on specific platforms, add these flags to the Makefile:
+
+```makefile
+# Fallback: disable vectorization if alignment issues occur
+FLAGS += -DEIGEN_MAX_ALIGN_BYTES=0 -DEIGEN_DONT_VECTORIZE
 ```
 
 ## Build Verification
@@ -230,14 +266,22 @@ After integration, verify:
 
 ## Platform-Specific Notes
 
-### macOS
+### Target Platform
+
+- **Primary Development:** macOS ARM64 (Apple Silicon)
+- **CI/CD:** GitHub Actions builds for macOS, Windows, Linux
+- **VCV Rack Version:** 2.6.x and up
+
+### macOS (Primary)
 - Use `libc++` (already configured in NAMCore CMakeLists)
-- Universal binary support may require separate ARM64 and x86_64 builds
+- ARM64 (Apple Silicon) is the primary development target
+- Universal binary support handled via GitHub Actions CI
 
 ### Linux
-- Link with `stdc++fs` for filesystem operations
+- Link with `stdc++fs` for filesystem operations if needed
 - Use `-static-libstdc++ -static-libgcc` for distribution
 
 ### Windows
 - Define `NOMINMAX` and `WIN32_LEAN_AND_MEAN`
 - May need to handle different MSVC versions
+- Built via GitHub Actions CI with MinGW

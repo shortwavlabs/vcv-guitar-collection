@@ -2,7 +2,13 @@
 
 ## Overview
 
-This document assesses technical risks associated with integrating Neural Amp Modeler into a VCV Rack 2.x plugin, with particular focus on performance, stability, and maintainability.
+This document assesses technical risks associated with integrating Neural Amp Modeler into a VCV Rack 2.6.x plugin, with particular focus on performance, stability, and maintainability.
+
+### Target Platform
+
+- **Primary Development:** macOS ARM64 (Apple Silicon)
+- **Supported Platforms:** macOS, Windows, Linux (via GitHub Actions CI)
+- **VCV Rack Version:** 2.6.x and up
 
 ## Risk Matrix
 
@@ -86,7 +92,27 @@ VCV Rack's compiler flags (`-march=nehalem`) enable SSE4.2, which has alignment 
 
 ### Mitigation Strategies
 
-**Option A: Disable Eigen Vectorization (Safe but Slower)**
+**Primary: Proper Alignment (Performant - Our Approach)**
+
+1. Use `EIGEN_MAKE_ALIGNED_OPERATOR_NEW` macro in classes containing Eigen types
+2. Use `Eigen::aligned_allocator` for STL containers of Eigen types
+3. Verify alignment at runtime in debug builds
+
+```cpp
+// In src/dsp/Nam.h
+class NamDSP {
+public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW  // Required for proper alignment
+    
+    // ... Eigen matrices and vectors
+};
+```
+
+With C++17, `new` respects alignment requirements by default if `alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__`.
+
+**Fallback: Disable Eigen Vectorization (Safe but Slower)**
+
+If alignment issues occur on specific platforms:
 
 ```makefile
 FLAGS += -DEIGEN_MAX_ALIGN_BYTES=0 -DEIGEN_DONT_VECTORIZE
@@ -94,28 +120,11 @@ FLAGS += -DEIGEN_MAX_ALIGN_BYTES=0 -DEIGEN_DONT_VECTORIZE
 
 Performance impact: ~20-40% slower neural network inference.
 
-**Option B: Ensure Proper Alignment (Performant but Complex)**
-
-1. Use `EIGEN_MAKE_ALIGNED_OPERATOR_NEW` macro in classes containing Eigen types
-2. Use `Eigen::aligned_allocator` for STL containers of Eigen types
-3. Verify alignment at runtime in debug builds
-
-```cpp
-struct MyClass {
-    Eigen::MatrixXd matrix;
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-};
-```
-
-**Option C: Use C++17 Aligned Allocation**
-
-With C++17, `new` respects alignment requirements by default if `alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__`.
-
 ### Recommendation
 
-Start with **Option A** (disabled vectorization) for stability. Profile performance, and if acceptable, ship that. If performance is problematic, carefully implement Option B with extensive testing.
+**Use aligned allocation approach** for best performance. The NamDSP wrapper class in `src/dsp/Nam.h` uses `EIGEN_MAKE_ALIGNED_OPERATOR_NEW`. If alignment issues are reported on specific platforms (especially older x86), fall back to disabled vectorization for that platform only.
 
-### Residual Risk: **LOW** (with Option A) / **MEDIUM** (with Option B)
+### Residual Risk: **MEDIUM** (with aligned allocation) / **LOW** (with disabled vectorization fallback)
 
 ---
 
@@ -136,29 +145,29 @@ NAM models are trained at specific sample rates (typically 48kHz). Running at di
 
 ### Mitigation Strategies
 
-1. **Built-in Resampling (Recommended):**
-   
-   Use `ResamplingNAM` wrapper from NeuralAmpModelerPlugin:
-   ```cpp
-   class ResamplingNAM {
-       // Wraps nam::DSP with sample rate conversion
-       void process(float* input, float* output, int numFrames, 
-                    double inputSampleRate);
-   };
-   ```
+**Implemented: Built-in Resampling (in NamDSP wrapper)**
 
-2. **Use VCV Rack's libsamplerate:**
-   
-   The SDK includes libsamplerate (`samplerate.h`):
-   ```cpp
-   SRC_STATE* src = src_new(SRC_SINC_MEDIUM_QUALITY, 1, &error);
-   ```
+Resampling is implemented from the start using VCV Rack's libsamplerate (`samplerate.h`):
 
-3. **Document Model Requirements:**
-   
-   Display expected sample rate in module UI, warn if mismatched.
+```cpp
+// In src/dsp/Nam.h
+class NamDSP {
+    SRC_STATE* srcIn = nullptr;   // Upsample to model rate
+    SRC_STATE* srcOut = nullptr;  // Downsample from model rate
+    
+    void process(const float* input, float* output, int numFrames) {
+        // Automatic resampling when engine rate != model rate
+    }
+};
+```
 
-### Residual Risk: **LOW** (with resampling implemented)
+The NamDSP wrapper automatically:
+1. Detects model sample rate vs engine sample rate
+2. Upsamples input to model rate when needed
+3. Downsamples output back to engine rate
+4. Uses pre-allocated buffers to avoid audio thread allocations
+
+### Residual Risk: **LOW** (resampling implemented from the start)
 
 ---
 
@@ -250,12 +259,18 @@ However, this relies on proper pre-allocation:
 
 VCV Rack supports Windows, macOS, and Linux. NAM/Eigen must compile and run correctly on all platforms.
 
+### Development Focus
+
+- **Primary:** macOS ARM64 (Apple Silicon)
+- **CI/CD:** GitHub Actions builds for all platforms
+- **VCV Rack:** 2.6.x and up
+
 ### Platform-Specific Issues
 
 | Platform | Issue | Mitigation |
 |----------|-------|------------|
 | Windows | MSVC vs MinGW differences | Use MinGW (VCV Rack standard) |
-| macOS | ARM64 vs x86_64 | Universal binary or separate builds |
+| macOS | ARM64 primary focus | GitHub Actions handles x86_64 |
 | macOS | libc++ vs libstdc++ | Use libc++ (default on macOS) |
 | Linux | Various glibc versions | Link statically or use older glibc |
 | All | Filesystem paths | Use VCV Rack's `system::*` helpers |
@@ -345,23 +360,45 @@ Ensure license compatibility:
 ### Immediate Actions (Before Development)
 
 1. ✅ Add `NeuralAmpModelerCore` as git submodule
-2. ✅ Configure Eigen with `EIGEN_MAX_ALIGN_BYTES=0` initially
-3. ✅ Implement async model loading from the start
+2. ✅ Add `Eigen` as git submodule  
+3. ✅ Configure Eigen with `EIGEN_MAKE_ALIGNED_OPERATOR_NEW` in NamDSP wrapper
+4. ✅ Implement async model loading from the start
+5. ✅ Implement resampling from the start (in NamDSP wrapper)
 
 ### Development Best Practices
 
 1. Pre-allocate all buffers during initialization
 2. Use `enable_fast_tanh()` by default
-3. Implement sample rate conversion with `libsamplerate`
+3. Use NamDSP wrapper (`src/dsp/Nam.h`) for all NAM interactions
 4. Add CPU usage monitoring to module
+
+### File Structure
+
+```
+src/
+├── dsp/
+│   └── Nam.h              # NAM DSP abstraction (resampling, alignment, CPU monitoring)
+├── NamPlayer.hpp          # Module header
+├── NamPlayer.cpp          # Module implementation + widget (mono I/O, passthrough)
+├── plugin.hpp
+└── plugin.cpp
+```
+
+### Module Behavior
+
+- **I/O:** Mono input, mono output (guitar amps are inherently mono)
+- **Empty State:** Passthrough (audio passes through unprocessed when no model loaded)
+- **Panel Displays:** Model name, sample rate mismatch indicator, CPU meter
+- **Model Loading:** Submenu for bundled models + file picker for custom
 
 ### Testing Requirements
 
-1. Test on all three platforms (Windows/macOS/Linux)
-2. Test with various sample rates (44.1k, 48k, 96k, 192k)
-3. Test with various block sizes
-4. Stress test with multiple instances
-5. Test model loading during playback (no dropouts)
+1. Test primarily on macOS ARM64 (Apple Silicon)
+2. GitHub Actions CI tests on all three platforms (Windows/macOS/Linux)
+3. Test with various sample rates (44.1k, 48k, 96k, 192k)
+4. Test with various block sizes
+5. Stress test with multiple instances
+6. Test model loading during playback (no dropouts)
 
 ### Performance Targets
 
@@ -378,12 +415,13 @@ Ensure license compatibility:
 
 **Overall Feasibility: HIGH**
 
-The integration of NAM into VCV Rack 2.x is technically feasible with manageable risks. The primary concerns are:
+The integration of NAM into VCV Rack 2.6.x is technically feasible with manageable risks. The primary concerns are:
 
-1. **Eigen alignment** - Mitigated by disabling vectorization (with acceptable performance trade-off)
-2. **CPU performance** - NAM is well-optimized; modern CPUs handle it easily
-3. **Real-time safety** - NAM is designed for real-time; requires careful initialization
+1. **Eigen alignment** - Mitigated by using `EIGEN_MAKE_ALIGNED_OPERATOR_NEW` in the NamDSP wrapper, with fallback to disabled vectorization if needed
+2. **CPU performance** - NAM is well-optimized; modern CPUs (especially Apple Silicon) handle it easily
+3. **Real-time safety** - NAM is designed for real-time; the NamDSP wrapper handles proper initialization
+4. **Sample rate mismatch** - Mitigated by built-in resampling in NamDSP wrapper
 
 The NeuralAmpModelerPlugin (for DAWs) serves as a proven reference implementation, demonstrating that the core library works well in real-time audio contexts.
 
-**Recommended approach:** Start with conservative settings (no Eigen vectorization, 128-sample blocks, async loading), get a working implementation, then optimize based on profiling data.
+**Recommended approach:** Use aligned allocation with the NamDSP abstraction layer, implement resampling from the start, and develop primarily on macOS ARM64 with GitHub Actions handling cross-platform builds. Fall back to disabled Eigen vectorization only if alignment issues are reported on specific platforms.

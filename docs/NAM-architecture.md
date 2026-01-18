@@ -78,10 +78,40 @@ double expectedSampleRate = model->GetExpectedSampleRate();
 
 ## VCV Rack Module Architecture
 
+### Target Platform
+
+- **Primary:** VCV Rack 2.6.x and up
+- **Development Focus:** macOS ARM64 (Apple Silicon)
+- **Supported:** macOS, Windows, Linux (via GitHub Actions CI)
+
+### Module Specifications
+
+- **Module Width:** 21HP (106.68mm)
+- **I/O:** Mono input, mono output (guitar amps are inherently mono)
+- **Input Normalization:** Line-level (±5V → ±1.0), user adjusts via input gain
+- **Empty State:** Passthrough (audio passes through unprocessed when no model loaded)
+- **Panel Displays:**
+  - Model name display
+  - Sample rate mismatch indicator (when engine rate ≠ model rate)
+  - CPU usage meter
+
+### File Structure
+
+```
+src/
+├── dsp/
+│   └── Nam.h              # NAM DSP abstraction layer
+├── NamPlayer.hpp          # Module header
+├── NamPlayer.cpp          # Module implementation
+├── plugin.hpp
+└── plugin.cpp
+```
+
 ### Module Structure
 
 ```cpp
-struct NAMPlayerModule : rack::Module {
+// src/NamPlayer.hpp
+struct NamPlayer : rack::Module {
     enum ParamId {
         INPUT_LEVEL_PARAM,
         OUTPUT_LEVEL_PARAM,
@@ -100,16 +130,16 @@ struct NAMPlayerModule : rack::Module {
         LIGHTS_LEN
     };
     
-    // NAM model
-    std::unique_ptr<nam::DSP> namModel;
+    // NAM wrapper (from src/dsp/Nam.h)
+    std::unique_ptr<NamDSP> namDsp;
     std::string modelPath;
     
     // Audio processing state
-    std::vector<NAM_SAMPLE> inputBuffer;
-    std::vector<NAM_SAMPLE> outputBuffer;
+    std::vector<float> inputBuffer;
+    std::vector<float> outputBuffer;
     int bufferIndex = 0;
     
-    NAMPlayerModule();
+    NamPlayer();
     void process(const ProcessArgs& args) override;
     void loadModel(const std::string& path);
     json_t* dataToJson() override;
@@ -159,25 +189,31 @@ class CircularBuffer {
 
 ### Sample Rate Handling
 
-NAM models expect specific sample rates (typically 48kHz). If VCV Rack uses a different rate:
+NAM models expect specific sample rates (typically 48kHz). Resampling is implemented from the start using libsamplerate (included in VCV Rack SDK).
 
 ```cpp
-// Option 1: Use ResamplingNAM wrapper (from NeuralAmpModelerPlugin)
-// This handles resampling internally
-
-// Option 2: Manual resampling with libsamplerate
-// VCV Rack SDK includes libsamplerate in dep/include/samplerate.h
+// Resampling is handled in the NamDSP wrapper (src/dsp/Nam.h)
+// Uses VCV Rack SDK's libsamplerate: dep/include/samplerate.h
 
 #include "samplerate.h"
 
-class NAMPlayerModule : rack::Module {
+// In NamDSP class:
+class NamDSP {
     SRC_STATE* srcIn = nullptr;   // Upsample to model rate
     SRC_STATE* srcOut = nullptr;  // Downsample from model rate
+    double modelSampleRate = 48000.0;
+    double engineSampleRate = 48000.0;
     
-    void initResampling(double srcRate, double dstRate) {
+    void initResampling() {
         int error;
         srcIn = src_new(SRC_SINC_MEDIUM_QUALITY, 1, &error);
         srcOut = src_new(SRC_SINC_MEDIUM_QUALITY, 1, &error);
+    }
+    
+    void updateSampleRates(double engineRate, double modelRate) {
+        engineSampleRate = engineRate;
+        modelSampleRate = modelRate;
+        // Recalculate resampling ratios
     }
 };
 ```
@@ -302,44 +338,70 @@ void loadModelAsync(const std::string& path) {
 ## Module Widget
 
 ```cpp
-struct NAMPlayerWidget : ModuleWidget {
-    NAMPlayerWidget(NAMPlayerModule* module) {
+struct NamPlayerWidget : ModuleWidget {
+    NamPlayerWidget(NamPlayer* module) {
         setModule(module);
-        setPanel(createPanel(asset::plugin(pluginInstance, "res/NAMPlayer.svg")));
+        setPanel(createPanel(asset::plugin(pluginInstance, "res/NamPlayer.svg")));
         
-        // Screws
+        // Module is 21HP = 106.68mm wide
+        // Panel based on SWV_21HP_PANEL.svg template
+        
+        // Screws (4 corners)
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         
-        // Knobs
-        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15, 45)), module, NAMPlayerModule::INPUT_LEVEL_PARAM));
-        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(35, 45)), module, NAMPlayerModule::OUTPUT_LEVEL_PARAM));
+        // Knobs - spread across 21HP panel
+        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(26.67, 45)), module, NamPlayer::INPUT_LEVEL_PARAM));
+        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(80.01, 45)), module, NamPlayer::OUTPUT_LEVEL_PARAM));
         
-        // Ports
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15, 110)), module, NAMPlayerModule::AUDIO_INPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(35, 110)), module, NAMPlayerModule::AUDIO_OUTPUT));
+        // Mono ports
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(26.67, 110)), module, NamPlayer::AUDIO_INPUT));
+        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(80.01, 110)), module, NamPlayer::AUDIO_OUTPUT));
         
-        // Model load indicator
-        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(25, 25)), module, NAMPlayerModule::MODEL_LOADED_LIGHT));
+        // Model load indicator (centered)
+        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(53.34, 25)), module, NamPlayer::MODEL_LOADED_LIGHT));
+        
+        // Custom displays (implemented as custom widgets):
+        // - Model name display (center area)
+        // - Sample rate mismatch indicator
+        // - CPU usage meter
     }
     
     void appendContextMenu(Menu* menu) override {
-        NAMPlayerModule* module = dynamic_cast<NAMPlayerModule*>(this->module);
+        NamPlayer* module = dynamic_cast<NamPlayer*>(this->module);
         if (!module) return;
         
         menu->addChild(new MenuSeparator());
-        menu->addChild(createMenuItem("Load NAM Model...", "", [=]() {
-            // Open file dialog
+        
+        // Submenu for bundled models
+        menu->addChild(createSubmenuItem("Bundled Models", "", [=](Menu* submenu) {
+            // Populate with models from res/models/
+            for (const auto& modelFile : getBundledModels()) {
+                submenu->addChild(createMenuItem(modelFile.name, "", [=]() {
+                    module->loadModel(modelFile.path);
+                }));
+            }
+        }));
+        
+        // File picker for custom models
+        menu->addChild(createMenuItem("Load Custom Model...", "", [=]() {
             char* path = osdialog_file(OSDIALOG_OPEN, nullptr, nullptr, nullptr);
             if (path) {
                 module->loadModel(path);
                 free(path);
             }
         }));
+        
+        // Unload option
+        menu->addChild(createMenuItem("Unload Model", "", [=]() {
+            module->unloadModel();
+        }, !module->namDsp || !module->namDsp->isModelLoaded()));
     }
 };
+
+// Note: Widget implementation is in NamPlayer.cpp
 ```
 
 ## Recommended Block Sizes
@@ -352,3 +414,13 @@ struct NAMPlayerWidget : ModuleWidget {
 | 256 samples | 5.33 ms | Lower CPU, noticeable latency |
 
 Most users won't notice latency under 5ms, so 128-256 samples is recommended for efficiency.
+
+## Bundled NAM Models
+
+The plugin ships with all models from https://github.com/pelennor2170/NAM_models
+
+These models are included in the `res/models/` directory and can be loaded via:
+- **Submenu:** Right-click context menu lists all bundled models for quick access
+- **File picker:** "Load Custom Model..." option for user's own `.nam` files
+
+Note: The full model collection is bundled initially; this may be trimmed down later if distribution size or performance becomes an issue.
