@@ -120,8 +120,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          # Use the same RACK_DIR path as set in the Setup Rack SDK step
-          export RACK_DIR="$(pwd)/dep/Rack-SDK"
+          # Set RACK_DIR using MSYS2 path format
+          export RACK_DIR="$(cygpath -u "$GITHUB_WORKSPACE")/dep/Rack-SDK"
+          echo "RACK_DIR=$RACK_DIR"
           make dep
           make dist
 

@@ -83,6 +83,7 @@ if "$OUT_BIN"; then
   echo "Tests passed."
   exit 0
 else
-  echo "Tests failed."
-  exit $?
+  EXIT_CODE=$?
+  echo "Tests failed with exit code $EXIT_CODE"
+  exit $EXIT_CODE
 fi
