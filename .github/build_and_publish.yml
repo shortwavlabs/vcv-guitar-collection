@@ -8,8 +8,8 @@ on:
 
 jobs:
   build:
-    name: Build on $
-    runs-on: $
+    name: Build on ${{ matrix.platform_name }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -84,8 +84,8 @@ jobs:
       - name: Setup Rack SDK
         shell: bash
         run: |
-          echo "Downloading SDK from $"
-          curl -L -o Rack-SDK.zip "$"
+          echo "Downloading SDK from ${{ matrix.sdk_url }}"
+          curl -L -o Rack-SDK.zip "${{ matrix.sdk_url }}"
           unzip -q Rack-SDK.zip
           # SDK unzips to a folder like "Rack-SDK". We rename it to "Rack-SDK" just in case name varies.
           if [ -d "Rack-SDK" ]; then
@@ -129,5 +129,5 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tapestry-plugin-$
+          name: guitar-collection-plugin-${{ matrix.platform_name }}
           path: dist/*.vcvplugin
