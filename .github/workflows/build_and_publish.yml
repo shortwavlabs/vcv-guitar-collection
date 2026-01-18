@@ -113,13 +113,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          # Re-export RACK_DIR inside MSYS2 because GITHUB_ENV is not automatically shared 
-          # in the way make expects for path conversion sometimes, but let's try direct first.
-          # Actually, MSYS2 shell inherits env vars, but paths might need care.
-          # The SDK is at D:\a\repo\...\Rack-SDK. MSYS2 sees /d/a/repo/...
-          # We can just point relatively.
-          
-          export RACK_DIR="$(pwd)/Rack-SDK"
+          # Use the same RACK_DIR path as set in the Setup Rack SDK step
+          export RACK_DIR="$(pwd)/dep/Rack-SDK"
           make dep
           make dist
 
