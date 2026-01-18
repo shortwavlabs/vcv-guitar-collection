@@ -168,12 +168,18 @@ swv-guitar-collection/
 The plugin ships with all NAM models from:
 https://github.com/pelennor2170/NAM_models
 
-These are placed in `res/models/` and included in the distribution.
+These models are **manually downloaded and committed** to `res/models/` in the repository.
+
+**Download Process:**
+1. Clone or download the pelennor2170/NAM_models repository
+2. Copy all `.nam` files to `res/models/`
+3. Commit the models to version control
 
 **Model Loading:**
 - **Submenu:** Right-click menu lists all bundled models for quick selection
 - **File picker:** "Load Custom Model..." for user's own `.nam` files
 - **Empty state:** When no model is loaded, module acts as passthrough
+- **Model name:** Shown in context menu (not on panel display)
 
 **Note:** Full model collection bundled initially; may be trimmed if distribution size becomes an issue.
 

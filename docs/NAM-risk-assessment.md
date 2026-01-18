@@ -388,11 +388,14 @@ src/
 
 - **I/O:** Mono input, mono output (guitar amps are inherently mono)
 - **Empty State:** Passthrough (audio passes through unprocessed when no model loaded)
-- **Panel Displays:** Model name, sample rate mismatch indicator, CPU meter, gate activity
+- **Panel Displays:** Sample rate mismatch indicator, gate activity light
+- **Model Name:** Shown in context menu
 - **Model Loading:** Submenu for bundled models + file picker for custom
-- **Signal Flow:** Input → Gain → Noise Gate → NAM → Tone Stack → Output Gain → Output
-- **Noise Gate:** Hysteresis-based gate before NAM (Threshold, Attack, Release, Hold)
+- **Signal Flow:** Input → Noise Gate → Input Gain → NAM → Tone Stack → Output Gain → Output
+- **Noise Gate:** Hysteresis-based gate before gain (Threshold -60dB default, Attack 0.1-50ms, Release 10-500ms, Hold)
+- **Gate LED:** 1.0 when open, 0.0 when closed
 - **Tone Stack:** 5-band EQ after NAM (Bass, Middle, Treble, Presence, Depth)
+- **Bundled Models:** Manually downloaded and committed to res/models/
 
 ### Testing Requirements
 

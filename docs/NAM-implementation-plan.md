@@ -121,8 +121,7 @@ This header contains the NAM DSP wrapper with resampling support and proper Eige
  * - Proper Eigen memory alignment
  * - Thread-safe model swapping
  * - Passthrough when no model loaded
- * - CPU usage monitoring
- * - Noise gate (before NAM processing)
+ * - Noise gate (before input gain, before NAM processing)
  * - 5-band tone stack (Bass, Middle, Treble, Presence, Depth)
  */
 class NamDSP {
@@ -193,14 +192,14 @@ private:
  * NoiseGate - Hysteresis-based noise gate for guitar
  * 
  * Uses RMS envelope detection with hysteresis to prevent
- * chattering on decaying notes. Placed before NAM processing
- * since distortion amplifies noise.
+ * chattering on decaying notes. Placed before input gain
+ * and NAM processing since distortion amplifies noise.
  */
 struct NoiseGate {
     // Parameters
-    float threshold = -50.f;    // dB
-    float attack = 0.0005f;     // seconds
-    float release = 0.1f;       // seconds  
+    float threshold = -60.f;    // dB (default, range: -80 to 0)
+    float attack = 0.0005f;     // seconds (range: 0.1-50 ms)
+    float release = 0.1f;       // seconds (range: 10-500 ms)
     float hold = 0.05f;         // seconds
     float hysteresis = 6.f;     // dB
     
@@ -208,7 +207,7 @@ struct NoiseGate {
     float envelope = 0.f;
     float gain = 0.f;
     float holdCounter = 0.f;
-    bool isOpen = false;
+    bool isOpen = false;        // LED: 1.0 when open, 0.0 when closed
     
     // Coefficients
     float envAttack, envRelease;
@@ -396,7 +395,7 @@ void NamPlayer::process(const ProcessArgs& args) {
     // Update noise gate parameters from knobs
     if (namDsp) {
         float threshold = params[GATE_THRESHOLD_PARAM].getValue();  // -80 to 0 dB
-        float attack = params[GATE_ATTACK_PARAM].getValue();        // 0.1 to 10 ms
+        float attack = params[GATE_ATTACK_PARAM].getValue();        // 0.1 to 50 ms
         float release = params[GATE_RELEASE_PARAM].getValue();      // 10 to 500 ms
         float hold = params[GATE_HOLD_PARAM].getValue();            // 10 to 500 ms
         namDsp->setNoiseGate(threshold, attack, release, hold);
@@ -430,11 +429,8 @@ void NamPlayer::process(const ProcessArgs& args) {
     // Sample rate mismatch indicator
     lights[SAMPLE_RATE_LIGHT].setBrightness(namDsp->isSampleRateMismatched() ? 1.f : 0.f);
     
-    // Gate activity indicator
-    lights[GATE_LIGHT].setBrightness(namDsp->isGateOpen() ? 1.f : 0.2f);
-    
-    // Update CPU load for display
-    cpuLoad = namDsp->getCpuLoad();
+    // Gate activity indicator (0.0 when closed, 1.0 when open)
+    lights[GATE_LIGHT].setBrightness(namDsp->isGateOpen() ? 1.f : 0.f);
     
     // Accumulate input
     inputBuffer[bufferPos] = input;
@@ -706,8 +702,11 @@ Create `res/NamPlayer.svg` with:
 - Standard Rack panel dimensions
 - Labels for INPUT/OUTPUT knobs
 - Model indicator light
+- Sample rate mismatch light
+- Gate activity light
 - Input/Output port labels
-- Space for model name display (future)
+
+Note: Model name shown in context menu (no panel display needed)
 
 Recommended tools:
 - Inkscape
@@ -726,16 +725,15 @@ Elements (positioned for 21HP):
 Top Section (y=20mm):
 - Model indicator light: x=45mm (green)
 - Sample rate indicator: x=53mm (yellow) 
-- Gate activity light: x=61mm (green)
-- Model name display: center area, y=10-18mm
+- Gate activity light: x=61mm (green, 0.0 when closed)
 
 Gain Section (y=30mm):
 - INPUT gain knob: x=15mm (large)
 - OUTPUT gain knob: x=91mm (large)
 
 Noise Gate Section (y=50mm) - 4 knobs:
-- THRESHOLD knob: x=15mm (small) - -80 to 0 dB
-- ATTACK knob: x=34mm (small) - 0.1 to 10 ms
+- THRESHOLD knob: x=15mm (small) - -80 to 0 dB, default -60 dB
+- ATTACK knob: x=34mm (small) - 0.1 to 50 ms
 - RELEASE knob: x=53mm (small) - 10 to 500 ms
 - HOLD knob: x=72mm (small) - 10 to 500 ms
 
@@ -745,9 +743,6 @@ Tone Stack Section (y=70mm) - 5 knobs:
 - TREBLE knob: x=53mm (small) - High shelf 3.2kHz  
 - PRESENCE knob: x=72mm (small) - Peaking 3.5kHz
 - DEPTH knob: x=91mm (small) - Peaking 80Hz
-
-Display Section (y=85mm):
-- CPU meter: center area
 
 I/O Section (y=100mm):
 - Audio In port (mono): x=15mm
@@ -761,6 +756,8 @@ Labels:
 - "BASS" "MID" "TREB" "PRES" "DEPTH" above tone knobs
 - "IN" / "OUT" below ports
 - "NAM PLAYER" at top
+
+Note: Model name is shown in context menu, not on panel
 ```
 
 ---

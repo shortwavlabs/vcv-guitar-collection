@@ -91,10 +91,9 @@ double expectedSampleRate = model->GetExpectedSampleRate();
 - **Input Normalization:** Line-level (±5V → ±1.0), user adjusts via input gain
 - **Empty State:** Passthrough (audio passes through unprocessed when no model loaded)
 - **Panel Displays:**
-  - Model name display
   - Sample rate mismatch indicator (when engine rate ≠ model rate)
-  - CPU usage meter
   - Gate activity indicator
+  - Model name shown in context menu
 - **Noise Gate:** Placed before NAM processing to suppress input noise
   - Threshold, Attack, Release, Hold controls
   - Hysteresis to prevent chattering on decaying notes
@@ -248,15 +247,15 @@ class NamDSP {
 │                           NamPlayer Signal Flow                                       │
 ├──────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                      │
-│  Audio In ─► Input Gain ─► Noise Gate ─► NAM Model ─► Tone Stack ─► Output Gain ─► Out
-│    (±5V)      (0-2x)       (suppress)    (amp sim)     (5-band)      (0-2x)      (±5V)
+│  Audio In ─► Noise Gate ─► Input Gain ─► NAM Model ─► Tone Stack ─► Output Gain ─► Out
+│    (±5V)     (suppress)      (0-2x)      (amp sim)     (5-band)      (0-2x)      (±5V)
 │                                                                                      │
-│                              │             │               │                         │
-│                              ▼             ▼               ▼                         │
-│                         [Threshold    [Passthrough    [Bass/Mid/Treble               │
-│                          Attack        if no model]    Presence/Depth]               │
-│                          Release                                                     │
-│                          Hold]                                                       │
+│                 │                          │               │                         │
+│                 ▼                          ▼               ▼                         │
+│            [Threshold                 [Passthrough    [Bass/Mid/Treble               │
+│             Attack                     if no model]    Presence/Depth]               │
+│             Release                                                                  │
+│             Hold]                                                                    │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -275,8 +274,8 @@ The noise gate uses a **hysteresis envelope follower** design to prevent chatter
 
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
-| Threshold | -80 to 0 dB | -50 dB | Level below which gate closes |
-| Attack | 0.1 - 10 ms | 0.5 ms | How quickly gate opens (fast for pick transients) |
+| Threshold | -80 to 0 dB | -60 dB | Level below which gate closes |
+| Attack | 0.1 - 50 ms | 0.5 ms | How quickly gate opens (fast for pick transients) |
 | Release | 10 - 500 ms | 100 ms | How quickly gate closes (smooth for sustain) |
 | Hold | 10 - 500 ms | 50 ms | Time to keep gate open after signal drops |
 
@@ -293,9 +292,9 @@ The noise gate uses a **hysteresis envelope follower** design to prevent chatter
  */
 struct NoiseGate {
     // Parameters
-    float threshold = -50.f;    // dB
-    float attack = 0.0005f;     // seconds
-    float release = 0.1f;       // seconds
+    float threshold = -60.f;    // dB (default)
+    float attack = 0.0005f;     // seconds (0.1-50 ms range)
+    float release = 0.1f;       // seconds (10-500 ms range)
     float hold = 0.05f;         // seconds
     float hysteresis = 6.f;     // dB (close threshold = open threshold - hysteresis)
     
@@ -312,7 +311,7 @@ struct NoiseGate {
     void setSampleRate(double sr);
     void setParameters(float threshDb, float attackMs, float releaseMs, float holdMs);
     float process(float sample);  // Returns gated sample
-    bool getGateState() const { return isOpen; }  // For LED indicator
+    bool getGateState() const { return isOpen; }  // For LED indicator (0.0 when closed)
     void reset();
 };
 ```
@@ -338,8 +337,8 @@ struct NoiseGate {
 │                   NamPlayer::process()                          │
 │                                                                 │
 │  1. Get input voltage (±5V) → normalize to ±1.0                │
-│  2. Apply input gain                                           │
-│  3. Apply noise gate                                           │
+│  2. Apply noise gate (before gain - gates raw input)           │
+│  3. Apply input gain                                           │
 │  4. Accumulate in input buffer                                 │
 │  5. When buffer full: call namDsp->process()                   │
 │  6. Apply tone stack (5-band EQ)                               │
@@ -478,10 +477,8 @@ struct NamPlayerWidget : ModuleWidget {
         // Model load indicator (centered)
         addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(53.34, 20)), module, NamPlayer::MODEL_LOADED_LIGHT));
         
-        // Custom displays (implemented as custom widgets):
-        // - Model name display (center area)
-        // - Sample rate mismatch indicator
-        // - CPU usage meter
+        // Sample rate mismatch indicator light can be added here
+        // Model name is shown in context menu
     }
     
     void appendContextMenu(Menu* menu) override {
@@ -547,15 +544,15 @@ Note: The full model collection is bundled initially; this may be trimmed down l
 │                           NamPlayer Signal Flow                                   │
 ├──────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                    │
-│  Audio In ─► Input Gain ─► Noise Gate ─► NAM Model ─► Tone Stack ─► Output Gain ─► Out
-│    (±5V)      (0-2x)      (suppress)    (amp sim)      (5-band)      (0-2x)     (±5V)
+│  Audio In ─► Noise Gate ─► Input Gain ─► NAM Model ─► Tone Stack ─► Output Gain ─► Out
+│    (±5V)     (suppress)      (0-2x)      (amp sim)      (5-band)      (0-2x)     (±5V)
 │                                                                                    │
-│                              │             │               │                        │
-│                              ▼             ▼               ▼                        │
-│                         [Threshold    [Passthrough    [Bass/Mid/Treble            │
-│                          Attack        if no model]    Presence/Depth]            │
-│                          Release                                                  │
-│                          Hold]                                                    │
+│                 │                          │               │                        │
+│                 ▼                          ▼               ▼                        │
+│            [Threshold                 [Passthrough    [Bass/Mid/Treble            │
+│             Attack                     if no model]    Presence/Depth]            │
+│             Release                                                               │
+│             Hold]                                                                 │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
