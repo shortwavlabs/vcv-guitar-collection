@@ -102,15 +102,14 @@ jobs:
         shell: bash
         run: |
           chmod +x ./run_tests.sh
-          # Debug on Windows: check for DLLs
+          # Debug on Windows: check for DLL files
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            echo "Looking for DLLs in SDK..."
-            find dep/Rack-SDK -name "*.dll" -o -name "*.dll.a" | head -20
-            echo "Checking test executable dependencies..."
-            if [ -f "./build_test_swv_guitar_collection" ] || [ -f "./build/build_test_swv_guitar_collection" ]; then
-              ldd ./build_test_swv_guitar_collection 2>&1 || true
-              ldd ./build/build_test_swv_guitar_collection 2>&1 || true
-            fi
+            echo "Looking for DLL files..."
+            find dep/Rack-SDK -type f \( -name "*.dll" -o -name "Rack.dll" -o -name "libRack.dll" \) 2>/dev/null || echo "No DLL files found"
+            echo "Checking SDK structure:"
+            ls -la dep/Rack-SDK/ | head -20
+            echo "Checking SDK dep folder:"
+            ls -la dep/Rack-SDK/dep/ 2>/dev/null || echo "No dep folder"
           fi
           ./run_tests.sh
 
