@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the architecture for a stereo cabinet simulator module for VCV Rack 2.x. The module uses convolution-based impulse response (IR) loading to emulate guitar/bass cabinets, and is designed to be placed after the NAM Player in the signal chain.
+This document describes the architecture for a mono cabinet simulator module for VCV Rack 2.x. The module uses convolution-based impulse response (IR) loading to emulate guitar/bass cabinets, and is designed to be placed after the NAM Player in the signal chain.
 
 ## Module Concept
 
@@ -14,6 +14,7 @@ Guitar → NAM Player (Amp Sim) → Cabinet Simulator → Output
                                  [IR A] + [IR B]
                                         ↓
                                    Blend A/B
+                                   (wet/dry if single IR)
                                         ↓
                                  Low/High Pass Filters
                                         ↓
@@ -23,10 +24,11 @@ Guitar → NAM Player (Amp Sim) → Cabinet Simulator → Output
 ### Core Features
 
 1. **Dual IR Loading** - Load up to 2 impulse responses simultaneously
-2. **IR Blending** - Crossfade/blend between IR A and IR B
-3. **Tone Shaping** - High-pass and low-pass filters post-convolution
+2. **IR Blending** - Crossfade/blend between IR A and IR B (wet/dry mix when single IR loaded)
+3. **Tone Shaping** - High-pass and low-pass 2-pole (12 dB/oct) filters post-convolution
 4. **IR Normalization** - Optional per-IR peak normalization
 5. **Output Volume** - Master output level control
+6. **Mono Processing** - Single channel processing (stereo IRs summed to mono)
 
 ## Technical Architecture
 
@@ -80,10 +82,14 @@ Cabinet IRs are typically distributed as WAV files:
 | High Quality | 96 kHz | 24-32 bit | 500-1000 ms |
 | Ultra | 192 kHz | 32-bit float | 1000+ ms |
 
-**Recommended IR constraints for real-time use:**
-- Maximum length: ~1 second (48,000 samples at 48 kHz)
+**IR constraints for this module:**
+- Maximum length: 1 second (48,000 samples at 48 kHz)
+- IRs longer than 1 second will be automatically trimmed
+- Stereo IRs are summed to mono on load
 - Target length: 200-500 ms (10,000-24,000 samples)
 - Longer IRs increase latency and CPU usage
+
+**Note:** No IRs are bundled with this module. Users must provide their own cabinet IR files.
 
 ### WAV File Loading
 
@@ -97,9 +103,9 @@ A single-header C library, commonly used in VCV Rack plugins:
 #include "dr_wav.h"
 
 struct WavFile {
-    std::vector<float> samples;
+    std::vector<float> samples;  // Always mono output
     unsigned int sampleRate;
-    unsigned int channels;
+    unsigned int originalChannels;
     
     bool load(const std::string& path) {
         drwav wav;
@@ -108,13 +114,34 @@ struct WavFile {
         }
         
         sampleRate = wav.sampleRate;
-        channels = wav.channels;
+        originalChannels = wav.channels;
         
-        size_t totalSamples = wav.totalPCMFrameCount * wav.channels;
-        samples.resize(totalSamples);
-        drwav_read_pcm_frames_f32(&wav, wav.totalPCMFrameCount, samples.data());
-        
+        // Read all samples
+        size_t totalFrames = wav.totalPCMFrameCount;
+        std::vector<float> rawSamples(totalFrames * wav.channels);
+        drwav_read_pcm_frames_f32(&wav, totalFrames, rawSamples.data());
         drwav_uninit(&wav);
+        
+        // Convert to mono (sum channels)
+        samples.resize(totalFrames);
+        if (wav.channels == 1) {
+            samples = std::move(rawSamples);
+        } else {
+            for (size_t i = 0; i < totalFrames; i++) {
+                float sum = 0.f;
+                for (unsigned int ch = 0; ch < wav.channels; ch++) {
+                    sum += rawSamples[i * wav.channels + ch];
+                }
+                samples[i] = sum / wav.channels;  // Average channels
+            }
+        }
+        
+        // Trim to max 1 second at current sample rate
+        size_t maxSamples = sampleRate;  // 1 second
+        if (samples.size() > maxSamples) {
+            samples.resize(maxSamples);
+        }
+        
         return true;
     }
 };
@@ -153,19 +180,17 @@ resampler.setQuality(6); // 0-10 scale
 
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
-| BLEND | 0.0 - 1.0 | 0.5 | Crossfade between IR A and IR B |
-| LOWPASS | 1 kHz - 20 kHz | 20 kHz | Low-pass filter cutoff frequency |
-| HIGHPASS | 20 Hz - 2 kHz | 20 Hz | High-pass filter cutoff frequency |
+| BLEND | 0.0 - 1.0 | 0.5 | Crossfade between IR A and IR B. When only one IR is loaded, acts as wet/dry mix (0 = dry/bypass, 1 = 100% wet) |
+| LOWPASS | 1 kHz - 20 kHz | 20 kHz | Low-pass filter cutoff frequency (2-pole, 12 dB/oct) |
+| HIGHPASS | 20 Hz - 2 kHz | 20 Hz | High-pass filter cutoff frequency (2-pole, 12 dB/oct) |
 | OUTPUT | 0.0 - 2.0 | 1.0 | Output level (0-200%) |
 
 ### Inputs/Outputs
 
 | Port | Type | Description |
 |------|------|-------------|
-| AUDIO_INPUT_L | Input | Left audio input |
-| AUDIO_INPUT_R | Input | Right audio input (normaled to L) |
-| AUDIO_OUTPUT_L | Output | Left audio output |
-| AUDIO_OUTPUT_R | Output | Right audio output |
+| AUDIO_INPUT | Input | Mono audio input |
+| AUDIO_OUTPUT | Output | Mono audio output |
 
 ### Lights
 
@@ -201,13 +226,11 @@ struct CabSim : Module {
         PARAMS_LEN
     };
     enum InputId {
-        AUDIO_INPUT_L,
-        AUDIO_INPUT_R,
+        AUDIO_INPUT,
         INPUTS_LEN
     };
     enum OutputId {
-        AUDIO_OUTPUT_L,
-        AUDIO_OUTPUT_R,
+        AUDIO_OUTPUT,
         OUTPUTS_LEN
     };
     enum LightId {
@@ -228,13 +251,13 @@ struct CabSim : Module {
     std::string irPathA, irPathB;
     bool normalizeA = false, normalizeB = false;
     
-    // Post-convolution filters
-    rack::dsp::TBiquadFilter<> lowpassL, lowpassR;
-    rack::dsp::TBiquadFilter<> highpassL, highpassR;
+    // Post-convolution filters (2-pole, 12 dB/oct)
+    rack::dsp::TBiquadFilter<> lowpass;
+    rack::dsp::TBiquadFilter<> highpass;
     
-    // Block buffers
-    std::vector<float> inputBufferL, inputBufferR;
-    std::vector<float> outputBufferL, outputBufferR;
+    // Block buffers (mono)
+    std::vector<float> inputBuffer;
+    std::vector<float> outputBuffer;
     std::vector<float> tempBufferA, tempBufferB;
     int bufferPos = 0;
     
@@ -281,7 +304,7 @@ struct IRLoader {
 
 class CabSimDSP {
 public:
-    static constexpr int MAX_IR_LENGTH = 96000;  // 2 seconds at 48kHz
+    static constexpr int MAX_IR_LENGTH = 48000;  // 1 second at 48kHz (IRs will be trimmed)
     static constexpr int BLOCK_SIZE = 256;
     
     CabSimDSP();
@@ -294,11 +317,9 @@ public:
     std::string getIRName(int slot) const;
     std::string getIRPath(int slot) const;
     
-    // Processing
+    // Processing (mono)
     void setSampleRate(float rate);
-    void process(float inputL, float inputR, 
-                 float& outputL, float& outputR,
-                 float blend, float lowpassFreq, float highpassFreq);
+    float process(float input, float blend, float lowpassFreq, float highpassFreq);
     
     // Normalization control
     void setNormalize(int slot, bool enabled);
@@ -316,9 +337,9 @@ private:
     std::vector<float> outputBlockB;
     int blockPos = 0;
     
-    // Output filters
-    rack::dsp::TBiquadFilter<float> lpfL, lpfR;
-    rack::dsp::TBiquadFilter<float> hpfL, hpfR;
+    // Output filters (2-pole, 12 dB/oct)
+    rack::dsp::TBiquadFilter<float> lpf;
+    rack::dsp::TBiquadFilter<float> hpf;
     
     void updateFilters(float lpFreq, float hpFreq);
 };
@@ -330,19 +351,14 @@ Since VCV Rack calls `process()` sample-by-sample but the convolver processes bl
 
 ```cpp
 void CabSim::process(const ProcessArgs& args) {
-    // Get inputs
-    float inputL = inputs[AUDIO_INPUT_L].getVoltage() / 5.f;
-    float inputR = inputs[AUDIO_INPUT_R].isConnected() 
-                   ? inputs[AUDIO_INPUT_R].getVoltage() / 5.f 
-                   : inputL;
+    // Get mono input (normalized to ±1.0)
+    float input = inputs[AUDIO_INPUT].getVoltage() / 5.f;
     
     // Accumulate into block buffer
-    inputBufferL[bufferPos] = inputL;
-    inputBufferR[bufferPos] = inputR;
+    inputBuffer[bufferPos] = input;
     
     // Output from previous block
-    float outputL = outputBufferL[bufferPos];
-    float outputR = outputBufferR[bufferPos];
+    float output = outputBuffer[bufferPos];
     
     bufferPos++;
     
@@ -351,54 +367,70 @@ void CabSim::process(const ProcessArgs& args) {
         std::lock_guard<std::mutex> lock(convMutex);
         
         float blend = params[BLEND_PARAM].getValue();
+        bool hasA = convolverA != nullptr;
+        bool hasB = convolverB != nullptr;
         
-        // Process through both convolvers
-        if (convolverA) {
-            convolverA->processBlock(inputBufferL.data(), tempBufferA.data());
+        // Process through convolvers
+        if (hasA) {
+            convolverA->processBlock(inputBuffer.data(), tempBufferA.data());
         }
-        if (convolverB) {
-            convolverB->processBlock(inputBufferL.data(), tempBufferB.data());
+        if (hasB) {
+            convolverB->processBlock(inputBuffer.data(), tempBufferB.data());
         }
         
         // Blend results
         for (int i = 0; i < BLOCK_SIZE; i++) {
-            float a = convolverA ? tempBufferA[i] : 0.f;
-            float b = convolverB ? tempBufferB[i] : 0.f;
-            outputBufferL[i] = a * (1.f - blend) + b * blend;
+            float wet = 0.f;
+            
+            if (hasA && hasB) {
+                // Both IRs: crossfade between A and B
+                wet = tempBufferA[i] * (1.f - blend) + tempBufferB[i] * blend;
+            } else if (hasA) {
+                // Only IR A: blend is wet/dry mix
+                wet = tempBufferA[i];
+                outputBuffer[i] = inputBuffer[i] * (1.f - blend) + wet * blend;
+                continue;
+            } else if (hasB) {
+                // Only IR B: blend is wet/dry mix
+                wet = tempBufferB[i];
+                outputBuffer[i] = inputBuffer[i] * (1.f - blend) + wet * blend;
+                continue;
+            } else {
+                // No IRs: passthrough
+                outputBuffer[i] = inputBuffer[i];
+                continue;
+            }
+            
+            outputBuffer[i] = wet;
         }
         
-        // Apply filters...
+        // Apply filters to output buffer...
         
         bufferPos = 0;
     }
     
-    // Apply output gain
+    // Apply output gain and convert back to ±5V
     float outputGain = params[OUTPUT_PARAM].getValue();
-    outputs[AUDIO_OUTPUT_L].setVoltage(outputL * outputGain * 5.f);
-    outputs[AUDIO_OUTPUT_R].setVoltage(outputR * outputGain * 5.f);
+    outputs[AUDIO_OUTPUT].setVoltage(output * outputGain * 5.f);
 }
 ```
 
 ### Filter Implementation
 
-Post-convolution tone shaping using VCV Rack's built-in biquad filters:
+Post-convolution tone shaping using VCV Rack's built-in biquad filters (2-pole, 12 dB/octave):
 
 ```cpp
 void updateFilters(float sampleRate, float lpFreq, float hpFreq) {
-    // Lowpass filter
+    // Lowpass filter (2-pole, 12 dB/oct)
     float lpNorm = std::clamp(lpFreq / sampleRate, 0.001f, 0.499f);
-    lpfL.setParameters(rack::dsp::TBiquadFilter<>::LOWPASS, lpNorm, 0.707f, 1.f);
-    lpfR.setParameters(rack::dsp::TBiquadFilter<>::LOWPASS, lpNorm, 0.707f, 1.f);
+    lpf.setParameters(rack::dsp::TBiquadFilter<>::LOWPASS, lpNorm, 0.707f, 1.f);
     
-    // Highpass filter
+    // Highpass filter (2-pole, 12 dB/oct)
     float hpNorm = std::clamp(hpFreq / sampleRate, 0.001f, 0.499f);
-    hpfL.setParameters(rack::dsp::TBiquadFilter<>::HIGHPASS, hpNorm, 0.707f, 1.f);
-    hpfR.setParameters(rack::dsp::TBiquadFilter<>::HIGHPASS, hpNorm, 0.707f, 1.f);
+    hpf.setParameters(rack::dsp::TBiquadFilter<>::HIGHPASS, hpNorm, 0.707f, 1.f);
 }
 
-float applyFilters(float sample, 
-                   rack::dsp::TBiquadFilter<>& lpf,
-                   rack::dsp::TBiquadFilter<>& hpf) {
+float applyFilters(float sample) {
     sample = hpf.process(sample);  // HPF first
     sample = lpf.process(sample);  // Then LPF
     return sample;
@@ -549,7 +581,7 @@ Each convolver allocates:
 For a 1-second IR at 48kHz with 256 block size:
 - ~192 kernel blocks
 - ~400 KB per convolver
-- ~800 KB total for stereo dual-IR
+- ~800 KB total for dual-IR
 
 ## File Structure
 
@@ -601,12 +633,12 @@ res/
 
 ## Future Enhancements
 
-1. **Stereo IRs** - Support for stereo impulse responses
+1. **Stereo Processing** - Full stereo signal path with stereo IRs
 2. **IR Preview** - Waveform display of loaded IRs
 3. **IR Browser** - Built-in browser for IR management
 4. **Phase Alignment** - Align IRs for proper blending
-5. **Preset IRs** - Bundle common cabinet IRs
-6. **CV Control** - Blend parameter CV input
+5. **CV Control** - Blend parameter CV input
+6. **Variable Latency** - Adjustable block size for latency/CPU tradeoff
 
 ## References
 

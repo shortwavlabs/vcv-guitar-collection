@@ -145,14 +145,12 @@ enum ParamId {
 **Inputs/Outputs:**
 ```cpp
 enum InputId {
-    AUDIO_INPUT_L,
-    AUDIO_INPUT_R,
+    AUDIO_INPUT,
     INPUTS_LEN
 };
 
 enum OutputId {
-    AUDIO_OUTPUT_L,
-    AUDIO_OUTPUT_R,
+    AUDIO_OUTPUT,
     OUTPUTS_LEN
 };
 ```
@@ -176,27 +174,25 @@ enum LightId {
 CabSim::CabSim() {
     config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
     
-    // Blend: 0 = IR A only, 1 = IR B only
+    // Blend: 0 = IR A only (or dry), 1 = IR B only (or wet)
+    // When only one IR loaded, acts as wet/dry mix
     configParam(BLEND_PARAM, 0.f, 1.f, 0.5f, "IR Blend", "%", 0.f, 100.f);
     
-    // Lowpass: 1kHz to 20kHz, log scale
+    // Lowpass: 1kHz to 20kHz, log scale (2-pole, 12 dB/oct)
     configParam(LOWPASS_PARAM, 0.f, 1.f, 1.f, "Low-Pass Cutoff", " Hz", 
                 std::pow(20000.f / 1000.f, 1.f), 1000.f);
     
-    // Highpass: 20Hz to 2kHz, log scale
+    // Highpass: 20Hz to 2kHz, log scale (2-pole, 12 dB/oct)
     configParam(HIGHPASS_PARAM, 0.f, 1.f, 0.f, "High-Pass Cutoff", " Hz",
                 std::pow(2000.f / 20.f, 1.f), 20.f);
     
     // Output level: 0-200%
     configParam(OUTPUT_PARAM, 0.f, 2.f, 1.f, "Output Level", "%", 0.f, 100.f);
     
-    configInput(AUDIO_INPUT_L, "Left Audio");
-    configInput(AUDIO_INPUT_R, "Right Audio");
-    configOutput(AUDIO_OUTPUT_L, "Left Audio");
-    configOutput(AUDIO_OUTPUT_R, "Right Audio");
+    configInput(AUDIO_INPUT, "Audio");
+    configOutput(AUDIO_OUTPUT, "Audio");
     
-    configBypass(AUDIO_INPUT_L, AUDIO_OUTPUT_L);
-    configBypass(AUDIO_INPUT_R, AUDIO_OUTPUT_R);
+    configBypass(AUDIO_INPUT, AUDIO_OUTPUT);
     
     // Initialize DSP
     cabSimDsp = std::make_unique<CabSimDSP>();
@@ -215,20 +211,15 @@ void CabSim::process(const ProcessArgs& args) {
     
     float outputGain = params[OUTPUT_PARAM].getValue();
     
-    // Get inputs (normalized to ±1.0)
-    float inputL = inputs[AUDIO_INPUT_L].getVoltage() / 5.f;
-    float inputR = inputs[AUDIO_INPUT_R].isConnected() 
-                   ? inputs[AUDIO_INPUT_R].getVoltage() / 5.f 
-                   : inputL;
+    // Get mono input (normalized to ±1.0)
+    float input = inputs[AUDIO_INPUT].getVoltage() / 5.f;
     
     // Process through DSP
-    float outputL, outputR;
-    cabSimDsp->process(inputL, inputR, outputL, outputR, 
-                       blend, lpFreq, hpFreq, args.sampleRate);
+    // Note: when only one IR loaded, blend acts as wet/dry mix
+    float output = cabSimDsp->process(input, blend, lpFreq, hpFreq, args.sampleRate);
     
     // Apply output gain and convert back to ±5V
-    outputs[AUDIO_OUTPUT_L].setVoltage(outputL * outputGain * 5.f);
-    outputs[AUDIO_OUTPUT_R].setVoltage(outputR * outputGain * 5.f);
+    outputs[AUDIO_OUTPUT].setVoltage(output * outputGain * 5.f);
     
     // Update lights
     lights[IR_A_LIGHT].setBrightness(cabSimDsp->isIRLoaded(0) ? 1.f : 0.f);
@@ -390,17 +381,13 @@ struct CabSimWidget : ModuleWidget {
         addParam(createParamCentered<RoundBlackKnob>(
             mm2px(Vec(20, 95)), module, CabSim::OUTPUT_PARAM));
         
-        // Input jacks
+        // Input jack (mono)
         addInput(createInputCentered<PJ301MPort>(
-            mm2px(Vec(10, 115)), module, CabSim::AUDIO_INPUT_L));
-        addInput(createInputCentered<PJ301MPort>(
-            mm2px(Vec(10, 105)), module, CabSim::AUDIO_INPUT_R));
+            mm2px(Vec(10, 115)), module, CabSim::AUDIO_INPUT));
         
-        // Output jacks
+        // Output jack (mono)
         addOutput(createOutputCentered<PJ301MPort>(
-            mm2px(Vec(30, 115)), module, CabSim::AUDIO_OUTPUT_L));
-        addOutput(createOutputCentered<PJ301MPort>(
-            mm2px(Vec(30, 105)), module, CabSim::AUDIO_OUTPUT_R));
+            mm2px(Vec(30, 115)), module, CabSim::AUDIO_OUTPUT));
     }
     
     void appendContextMenu(Menu* menu) override;

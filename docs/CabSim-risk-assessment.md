@@ -15,6 +15,8 @@ This document identifies potential risks in the Cabinet Simulator (CabSim) modul
 **Description:** 
 FFT-based convolution with long impulse responses can be CPU-intensive, especially when running two convolvers for IR blending.
 
+**Note:** Mono-only processing reduces CPU load compared to stereo.
+
 **Impact:**
 - Audio dropouts/glitches
 - Unable to use multiple instances
