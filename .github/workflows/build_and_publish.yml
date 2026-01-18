@@ -78,15 +78,15 @@ jobs:
           echo "Downloading SDK from ${{ matrix.sdk_url }}"
           curl -L -o Rack-SDK.zip "${{ matrix.sdk_url }}"
           unzip -q Rack-SDK.zip
-          # SDK unzips to a folder like "Rack-SDK". We rename it to "Rack-SDK" just in case name varies.
+          # SDK unzips to a folder like "Rack-SDK". Move it to dep/Rack-SDK where tests expect it
           if [ -d "Rack-SDK" ]; then
-            echo "SDK found in Rack-SDK"
+            mv "Rack-SDK" dep/Rack-SDK
           else
             # Find the directory it unzipped to (e.g. Rack-SDK-2.x.x)
             SDK_DIR=$(ls -d Rack-SDK* | head -n 1)
-            mv "$SDK_DIR" Rack-SDK
+            mv "$SDK_DIR" dep/Rack-SDK
           fi
-          echo "RACK_DIR=$(pwd)/Rack-SDK" >> $GITHUB_ENV
+          echo "RACK_DIR=$(pwd)/dep/Rack-SDK" >> $GITHUB_ENV
 
       # ------------------------------------------------------------------------
       # Run Tests
