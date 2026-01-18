@@ -1,0 +1,133 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build on $
+    runs-on: $
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform_name: lin-x64
+            sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-lin-x64.zip
+          - os: windows-latest
+            platform_name: win-x64
+            sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-win-x64.zip
+          - os: macos-14
+            platform_name: mac-arm64
+            sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-mac-arm64.zip
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ------------------------------------------------------------------------
+      # Setup Dependencies (Linux)
+      # ------------------------------------------------------------------------
+      - name: Install Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev jq zstd
+
+      # ------------------------------------------------------------------------
+      # Setup Dependencies (Mac)
+      # ------------------------------------------------------------------------
+      - name: Install Dependencies (Mac)
+        if: runner.os == 'macOS'
+        run: |
+          brew install jq zstd
+
+      # ------------------------------------------------------------------------
+      # Setup Dependencies (Windows)
+      # ------------------------------------------------------------------------
+      - name: Setup MSYS2 (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            make
+            unzip
+            zip
+            jq
+            zstd
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-zstd
+
+      # ------------------------------------------------------------------------
+      # Run Tests
+      # ------------------------------------------------------------------------
+      - name: Run Tests
+        shell: bash
+        run: |
+          chmod +x ./run_tests.sh
+          ./run_tests.sh
+
+      # ------------------------------------------------------------------------
+      # Download and Setup SDK
+      # ------------------------------------------------------------------------
+      - name: Setup Rack SDK
+        shell: bash
+        run: |
+          echo "Downloading SDK from $"
+          curl -L -o Rack-SDK.zip "$"
+          unzip -q Rack-SDK.zip
+          # SDK unzips to a folder like "Rack-SDK". We rename it to "Rack-SDK" just in case name varies.
+          if [ -d "Rack-SDK" ]; then
+            echo "SDK found in Rack-SDK"
+          else
+            # Find the directory it unzipped to (e.g. Rack-SDK-2.x.x)
+            SDK_DIR=$(ls -d Rack-SDK* | head -n 1)
+            mv "$SDK_DIR" Rack-SDK
+          fi
+          echo "RACK_DIR=$(pwd)/Rack-SDK" >> $GITHUB_ENV
+
+      # ------------------------------------------------------------------------
+      # Build Plugin (Linux/Mac)
+      # ------------------------------------------------------------------------
+      - name: Build Plugin (Linux/Mac)
+        if: runner.os != 'Windows'
+        run: |
+          make dep
+          make dist
+
+      # ------------------------------------------------------------------------
+      # Build Plugin (Windows)
+      # ------------------------------------------------------------------------
+      - name: Build Plugin (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          # Re-export RACK_DIR inside MSYS2 because GITHUB_ENV is not automatically shared 
+          # in the way make expects for path conversion sometimes, but let's try direct first.
+          # Actually, MSYS2 shell inherits env vars, but paths might need care.
+          # The SDK is at D:\a\repo\...\Rack-SDK. MSYS2 sees /d/a/repo/...
+          # We can just point relatively.
+          
+          export RACK_DIR="$(pwd)/Rack-SDK"
+          make dep
+          make dist
+
+      # ------------------------------------------------------------------------
+      # Upload Artifacts
+      # ------------------------------------------------------------------------
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tapestry-plugin-$
+          path: dist/*.vcvplugin
