@@ -42,7 +42,7 @@ UNAME_S=$(uname -s)
 
 # Compile with NAM includes and VCV Rack SDK includes
 if [[ "$UNAME_S" == "MINGW"* || "$UNAME_S" == "MSYS"* ]]; then
-  # Windows: link directly to the library file
+  # Windows: link to libspeexdsp directly from SDK dependencies
   "$CXX" -std=c++17 -O2 -Wall \
     -Isrc \
     -I"$NAM_DIR" \
@@ -55,7 +55,8 @@ if [[ "$UNAME_S" == "MINGW"* || "$UNAME_S" == "MSYS"* ]]; then
     -o "$OUT_BIN" \
     src/tests/test_swv_guitar_collection.cpp \
     $NAM_SOURCES \
-    dep/Rack-SDK/libRack.a
+    -Ldep/Rack-SDK/dep/lib \
+    -lspeexdsp
 else
   # macOS/Linux: use -L and -l flags
   "$CXX" -std=c++17 -O2 -Wall \
