@@ -78,6 +78,8 @@ public:
         }
         
         originalLength = samples.size();
+        // Initialize currentSampleRate to originalSampleRate in case resampleTo is not called
+        currentSampleRate = static_cast<float>(originalSampleRate);
         path = filePath;
         
         // Extract filename without extension for display
@@ -116,11 +118,23 @@ public:
         int inLen = static_cast<int>(samples.size());
         int outLen = static_cast<int>(outputSize);
         
-        // Create properly aligned input frame pointer
-        rack::dsp::Frame<1>* inFrames = reinterpret_cast<rack::dsp::Frame<1>*>(samples.data());
-        rack::dsp::Frame<1>* outFrames = reinterpret_cast<rack::dsp::Frame<1>*>(resampled.data());
+        // Create Frame arrays explicitly for type safety
+        // Frame<1> is guaranteed to be layout-compatible with a single float,
+        // but we use explicit conversion to be standards-compliant
+        std::vector<rack::dsp::Frame<1>> inFrames(samples.size());
+        std::vector<rack::dsp::Frame<1>> outFrames(outputSize);
         
-        src.process(inFrames, &inLen, outFrames, &outLen);
+        // Copy input samples to Frame array
+        for (size_t i = 0; i < samples.size(); i++) {
+            inFrames[i].samples[0] = samples[i];
+        }
+        
+        src.process(inFrames.data(), &inLen, outFrames.data(), &outLen);
+        
+        // Copy output back to resampled buffer
+        for (int i = 0; i < outLen; i++) {
+            resampled[i] = outFrames[i].samples[0];
+        }
         
         // Trim to actual output length
         resampled.resize(outLen);

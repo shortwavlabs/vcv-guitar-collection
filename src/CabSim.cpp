@@ -86,14 +86,82 @@ void CabSim::process(const ProcessArgs& args) {
 }
 
 void CabSim::onSampleRateChange(const SampleRateChangeEvent& e) {
-    currentSampleRate = e.sampleRate;
+    float newSampleRate = e.sampleRate;
     
-    std::lock_guard<std::mutex> lock(dspMutex);
-    if (cabSimDsp) {
-        cabSimDsp->setSampleRate(currentSampleRate);
+    // Skip if sample rate hasn't actually changed
+    if (std::abs(currentSampleRate - newSampleRate) < 1.f) {
+        return;
+    }
+    
+    currentSampleRate = newSampleRate;
+    
+    {
+        std::lock_guard<std::mutex> lock(dspMutex);
+        if (cabSimDsp) {
+            cabSimDsp->setSampleRate(currentSampleRate);
+        }
+    }
+    
+    // Reload IRs at new sample rate if they were loaded
+    // Store current paths since they'll be used by the background thread
+    std::string pathA = irPathA;
+    std::string pathB = irPathB;
+    
+    if (!pathA.empty() || !pathB.empty()) {
+        // Wait for any previous load to finish first
+        if (loadThread.joinable()) {
+            loadThread.join();
+        }
         
-        // Reload IRs at new sample rate if they were loaded
-        // This is handled by storing paths and reloading
+        isLoading = true;
+        loadingSlot = -1;
+        
+        loadThread = std::thread([this, pathA, pathB]() {
+            // Reload IR A if it was loaded
+            if (!pathA.empty()) {
+                loadingSlot = 0;
+                try {
+                    IRLoader loader;
+                    if (loader.load(pathA)) {
+                        loader.resampleTo(currentSampleRate);
+                        if (normalizeA) {
+                            loader.normalize();
+                        }
+                        {
+                            std::lock_guard<std::mutex> lock(dspMutex);
+                            cabSimDsp->setIRKernel(0, loader.getSamples(),
+                                                   loader.getPath(), loader.getName());
+                        }
+                    }
+                } catch (const std::exception& e) {
+                    WARN("Exception reloading IR A at new sample rate: %s", e.what());
+                }
+            }
+            
+            // Reload IR B if it was loaded
+            if (!pathB.empty()) {
+                loadingSlot = 1;
+                try {
+                    IRLoader loader;
+                    if (loader.load(pathB)) {
+                        loader.resampleTo(currentSampleRate);
+                        if (normalizeB) {
+                            loader.normalize();
+                        }
+                        {
+                            std::lock_guard<std::mutex> lock(dspMutex);
+                            cabSimDsp->setIRKernel(1, loader.getSamples(),
+                                                   loader.getPath(), loader.getName());
+                        }
+                    }
+                } catch (const std::exception& e) {
+                    WARN("Exception reloading IR B at new sample rate: %s", e.what());
+                }
+            }
+            
+            isLoading = false;
+            loadingSlot = -1;
+        });
     }
 }
 
@@ -182,7 +250,12 @@ void CabSim::setNormalize(int slot, bool enabled) {
     
     // Reload IR with new normalization setting if one is loaded
     std::string path = (slot == 0) ? irPathA : irPathB;
-    if (!path.empty() && !isLoading) {
+    if (!path.empty()) {
+        // Wait for any existing load to complete before starting new load
+        // This prevents race conditions when normalization settings change rapidly
+        if (loadThread.joinable()) {
+            loadThread.join();
+        }
         loadIR(slot, path);
     }
 }
@@ -241,29 +314,81 @@ void CabSim::dataFromJson(json_t* rootJ) {
         if (cabSimDsp) cabSimDsp->setNormalize(1, normalizeB);
     }
     
-    // Load IR paths
+    // Extract IR paths for loading
+    std::string pathA, pathB;
+    
     json_t* pathAJ = json_object_get(rootJ, "irPathA");
     if (pathAJ) {
-        std::string path = json_string_value(pathAJ);
-        if (!path.empty()) {
-            // Wait for any previous load
-            if (loadThread.joinable()) {
-                loadThread.join();
-            }
-            loadIR(0, path);
-            // Wait for this load to complete before loading B
-            if (loadThread.joinable()) {
-                loadThread.join();
-            }
-        }
+        pathA = json_string_value(pathAJ);
     }
     
     json_t* pathBJ = json_object_get(rootJ, "irPathB");
     if (pathBJ) {
-        std::string path = json_string_value(pathBJ);
-        if (!path.empty()) {
-            loadIR(1, path);
+        pathB = json_string_value(pathBJ);
+    }
+    
+    // Load both IRs in a single background thread to avoid blocking UI
+    if (!pathA.empty() || !pathB.empty()) {
+        // Wait for any previous load to finish first
+        if (loadThread.joinable()) {
+            loadThread.join();
         }
+        
+        isLoading = true;
+        loadingSlot = -1;  // Loading multiple slots
+        
+        loadThread = std::thread([this, pathA, pathB]() {
+            // Load IR A if path exists
+            if (!pathA.empty()) {
+                loadingSlot = 0;
+                try {
+                    IRLoader loader;
+                    if (loader.load(pathA)) {
+                        loader.resampleTo(currentSampleRate);
+                        if (normalizeA) {
+                            loader.normalize();
+                        }
+                        {
+                            std::lock_guard<std::mutex> lock(dspMutex);
+                            cabSimDsp->setIRKernel(0, loader.getSamples(),
+                                                   loader.getPath(), loader.getName());
+                        }
+                        irPathA = pathA;
+                    } else {
+                        WARN("Failed to load IR A: %s", pathA.c_str());
+                    }
+                } catch (const std::exception& e) {
+                    WARN("Exception loading IR A: %s", e.what());
+                }
+            }
+            
+            // Load IR B if path exists
+            if (!pathB.empty()) {
+                loadingSlot = 1;
+                try {
+                    IRLoader loader;
+                    if (loader.load(pathB)) {
+                        loader.resampleTo(currentSampleRate);
+                        if (normalizeB) {
+                            loader.normalize();
+                        }
+                        {
+                            std::lock_guard<std::mutex> lock(dspMutex);
+                            cabSimDsp->setIRKernel(1, loader.getSamples(),
+                                                   loader.getPath(), loader.getName());
+                        }
+                        irPathB = pathB;
+                    } else {
+                        WARN("Failed to load IR B: %s", pathB.c_str());
+                    }
+                } catch (const std::exception& e) {
+                    WARN("Exception loading IR B: %s", e.what());
+                }
+            }
+            
+            isLoading = false;
+            loadingSlot = -1;
+        });
     }
 }
 
