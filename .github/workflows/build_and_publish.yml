@@ -134,12 +134,13 @@ jobs:
         run: |
           # Set RACK_DIR using MSYS2 path format
           export RACK_DIR="$(cygpath -u "$GITHUB_WORKSPACE")/dep/Rack-SDK"
-          # Set ARCH explicitly for Windows to prevent SDK from detecting macOS
-          export ARCH=win
           echo "RACK_DIR=$RACK_DIR"
-          echo "ARCH=$ARCH"
+          # Check what SDK thinks the OS is
+          echo "Checking arch detection..."
+          uname -s
           make dep
-          make dist
+          # Force Windows architecture detection by overriding RACK_OS
+          make dist RACK_OS=win
 
       # ------------------------------------------------------------------------
       # Upload Artifacts
