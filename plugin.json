@@ -15,6 +15,12 @@
       "name": "NAM Player",
       "description": "Neural Amp Modeler player for guitar amp simulation with noise gate and 5-band EQ",
       "tags": ["Effect", "Distortion", "Equalizer", "Hardware Clone"]
+    },
+    {
+      "slug": "CabSim",
+      "name": "Cabinet Simulator",
+      "description": "Convolution-based cabinet simulator with dual IR loading, blending, and tone shaping filters",
+      "tags": ["Effect", "Equalizer", "Hardware Clone"]
     }
   ]
 }

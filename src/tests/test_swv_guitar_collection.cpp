@@ -9,6 +9,8 @@
 #include <limits>
 #include <algorithm>
 #include "../dsp/Nam.h"
+#include "../dsp/IRLoader.h"
+#include "../dsp/CabSimDSP.h"
 
 namespace TestSuite
 {
@@ -535,6 +537,252 @@ namespace TestSuite
   }
 
   //------------------------------------------------------------------------------
+  // IRLoader Tests
+  //------------------------------------------------------------------------------
+  void test_ir_loader_initialization(TestContext &ctx)
+  {
+    std::printf("Testing IRLoader initialization...\n");
+    
+    IRLoader loader;
+    T_ASSERT(ctx, !loader.isLoaded());
+    T_ASSERT(ctx, loader.getPath().empty());
+    T_ASSERT(ctx, loader.getName().empty());
+    T_ASSERT(ctx, loader.getSamples().empty());
+    T_ASSERT(ctx, loader.getLength() == 0);
+  }
+  
+  void test_ir_loader_reset(TestContext &ctx)
+  {
+    std::printf("Testing IRLoader reset...\n");
+    
+    IRLoader loader;
+    // Even without loading, reset should work
+    loader.reset();
+    
+    T_ASSERT(ctx, !loader.isLoaded());
+    T_ASSERT(ctx, loader.getSamples().empty());
+  }
+  
+  void test_ir_loader_invalid_file(TestContext &ctx)
+  {
+    std::printf("Testing IRLoader with invalid file...\n");
+    
+    IRLoader loader;
+    bool result = loader.load("/nonexistent/path/to/file.wav");
+    
+    T_ASSERT(ctx, !result);
+    T_ASSERT(ctx, !loader.isLoaded());
+  }
+  
+  void test_ir_loader_normalization(TestContext &ctx)
+  {
+    std::printf("Testing IRLoader normalization logic...\n");
+    
+    // Create a mock loader with synthetic data to test normalization
+    IRLoader loader;
+    
+    // We can't easily test file loading without a real file,
+    // but we can verify the normalization flag behavior
+    T_ASSERT(ctx, !loader.isNormalized());
+  }
+
+  //------------------------------------------------------------------------------
+  // CabSimDSP Tests
+  //------------------------------------------------------------------------------
+  void test_cabsim_dsp_initialization(TestContext &ctx)
+  {
+    std::printf("Testing CabSimDSP initialization...\n");
+    
+    CabSimDSP dsp;
+    T_ASSERT(ctx, !dsp.isIRLoaded(0));
+    T_ASSERT(ctx, !dsp.isIRLoaded(1));
+    T_ASSERT(ctx, dsp.getIRName(0).empty());
+    T_ASSERT(ctx, dsp.getIRName(1).empty());
+  }
+  
+  void test_cabsim_dsp_passthrough(TestContext &ctx)
+  {
+    std::printf("Testing CabSimDSP passthrough (no IRs)...\n");
+    
+    CabSimDSP dsp;
+    dsp.setSampleRate(48000.f);
+    
+    // Without any IRs loaded, should pass through with blend applied
+    // Process enough samples to fill a block
+    float blend = 0.5f;
+    float lpFreq = 20000.f;
+    float hpFreq = 20.f;
+    
+    // Process a full block (256 samples) plus some extra
+    for (int i = 0; i < 300; i++) {
+      float input = 0.5f * std::sin(2.f * M_PI * 440.f * i / 48000.f);
+      float output = dsp.process(input, blend, lpFreq, hpFreq);
+      T_ASSERT(ctx, !std::isnan(output) && !std::isinf(output));
+    }
+  }
+  
+  void test_cabsim_dsp_sample_rate(TestContext &ctx)
+  {
+    std::printf("Testing CabSimDSP sample rate handling...\n");
+    
+    CabSimDSP dsp;
+    dsp.setSampleRate(44100.f);
+    
+    // Should not crash
+    float output = dsp.process(0.3f, 0.5f, 10000.f, 100.f);
+    T_ASSERT(ctx, !std::isnan(output) && !std::isinf(output));
+    
+    // Change sample rate
+    dsp.setSampleRate(96000.f);
+    output = dsp.process(0.3f, 0.5f, 10000.f, 100.f);
+    T_ASSERT(ctx, !std::isnan(output) && !std::isinf(output));
+  }
+  
+  void test_cabsim_dsp_filter_processing(TestContext &ctx)
+  {
+    std::printf("Testing CabSimDSP filter processing...\n");
+    
+    CabSimDSP dsp;
+    dsp.setSampleRate(48000.f);
+    
+    // Test with various filter settings
+    float testFreqs[][2] = {
+      {20000.f, 20.f},     // Wide open
+      {5000.f, 100.f},     // Moderate
+      {2000.f, 500.f},     // Narrow
+      {1000.f, 1000.f},    // Very narrow
+    };
+    
+    for (const auto& freqs : testFreqs) {
+      float lpFreq = freqs[0];
+      float hpFreq = freqs[1];
+      
+      // Process a block
+      for (int i = 0; i < 300; i++) {
+        float input = 0.5f * std::sin(2.f * M_PI * 440.f * i / 48000.f);
+        float output = dsp.process(input, 0.5f, lpFreq, hpFreq);
+        T_ASSERT(ctx, !std::isnan(output) && !std::isinf(output));
+      }
+    }
+  }
+  
+  void test_cabsim_dsp_blend_values(TestContext &ctx)
+  {
+    std::printf("Testing CabSimDSP blend values...\n");
+    
+    CabSimDSP dsp;
+    dsp.setSampleRate(48000.f);
+    
+    // Test various blend values
+    float blendValues[] = {0.f, 0.25f, 0.5f, 0.75f, 1.f};
+    
+    for (float blend : blendValues) {
+      for (int i = 0; i < 300; i++) {
+        float input = 0.5f;
+        float output = dsp.process(input, blend, 20000.f, 20.f);
+        T_ASSERT(ctx, !std::isnan(output) && !std::isinf(output));
+      }
+    }
+  }
+  
+  void test_cabsim_dsp_reset(TestContext &ctx)
+  {
+    std::printf("Testing CabSimDSP reset...\n");
+    
+    CabSimDSP dsp;
+    dsp.setSampleRate(48000.f);
+    
+    // Process some samples
+    for (int i = 0; i < 100; i++) {
+      dsp.process(0.5f, 0.5f, 10000.f, 100.f);
+    }
+    
+    // Reset
+    dsp.reset();
+    
+    // Should still work after reset
+    float output = dsp.process(0.3f, 0.5f, 10000.f, 100.f);
+    T_ASSERT(ctx, !std::isnan(output) && !std::isinf(output));
+  }
+  
+  void test_cabsim_dsp_extreme_values(TestContext &ctx)
+  {
+    std::printf("Testing CabSimDSP with extreme values...\n");
+    
+    CabSimDSP dsp;
+    dsp.setSampleRate(48000.f);
+    
+    // Test with maximum input
+    for (int i = 0; i < 300; i++) {
+      float output = dsp.process(1.0f, 0.5f, 20000.f, 20.f);
+      T_ASSERT(ctx, !std::isnan(output) && !std::isinf(output));
+    }
+    
+    // Test with negative maximum
+    for (int i = 0; i < 300; i++) {
+      float output = dsp.process(-1.0f, 0.5f, 20000.f, 20.f);
+      T_ASSERT(ctx, !std::isnan(output) && !std::isinf(output));
+    }
+    
+    // Test with zero
+    for (int i = 0; i < 300; i++) {
+      float output = dsp.process(0.0f, 0.5f, 20000.f, 20.f);
+      T_ASSERT(ctx, !std::isnan(output) && !std::isinf(output));
+    }
+  }
+  
+  void test_cabsim_dsp_normalization_flag(TestContext &ctx)
+  {
+    std::printf("Testing CabSimDSP normalization flag...\n");
+    
+    CabSimDSP dsp;
+    
+    // Default should be false
+    T_ASSERT(ctx, !dsp.getNormalize(0));
+    T_ASSERT(ctx, !dsp.getNormalize(1));
+    
+    // Set and get
+    dsp.setNormalize(0, true);
+    T_ASSERT(ctx, dsp.getNormalize(0));
+    T_ASSERT(ctx, !dsp.getNormalize(1));
+    
+    dsp.setNormalize(1, true);
+    T_ASSERT(ctx, dsp.getNormalize(1));
+    
+    dsp.setNormalize(0, false);
+    T_ASSERT(ctx, !dsp.getNormalize(0));
+  }
+  
+  void test_cabsim_dsp_unload_ir(TestContext &ctx)
+  {
+    std::printf("Testing CabSimDSP unload IR...\n");
+    
+    CabSimDSP dsp;
+    
+    // Unload when nothing is loaded should not crash
+    dsp.unloadIR(0);
+    dsp.unloadIR(1);
+    
+    T_ASSERT(ctx, !dsp.isIRLoaded(0));
+    T_ASSERT(ctx, !dsp.isIRLoaded(1));
+  }
+  
+  void test_cabsim_dsp_invalid_slot(TestContext &ctx)
+  {
+    std::printf("Testing CabSimDSP invalid slot handling...\n");
+    
+    CabSimDSP dsp;
+    
+    // Invalid slots should be handled gracefully
+    T_ASSERT(ctx, !dsp.isIRLoaded(-1));
+    T_ASSERT(ctx, !dsp.isIRLoaded(2));
+    T_ASSERT(ctx, dsp.getIRName(-1).empty());
+    T_ASSERT(ctx, dsp.getIRName(2).empty());
+    T_ASSERT(ctx, !dsp.getNormalize(-1));
+    T_ASSERT(ctx, !dsp.getNormalize(2));
+  }
+
+  //------------------------------------------------------------------------------
   // Test Runner
   //------------------------------------------------------------------------------
   void run_all_swv_guitar_collection_tests()
@@ -573,6 +821,24 @@ namespace TestSuite
     test_nam_dsp_block_sizes(ctx);
     test_nam_dsp_dc_blocking(ctx);
     test_nam_dsp_extreme_values(ctx);
+    
+    // IRLoader tests
+    test_ir_loader_initialization(ctx);
+    test_ir_loader_reset(ctx);
+    test_ir_loader_invalid_file(ctx);
+    test_ir_loader_normalization(ctx);
+    
+    // CabSimDSP tests
+    test_cabsim_dsp_initialization(ctx);
+    test_cabsim_dsp_passthrough(ctx);
+    test_cabsim_dsp_sample_rate(ctx);
+    test_cabsim_dsp_filter_processing(ctx);
+    test_cabsim_dsp_blend_values(ctx);
+    test_cabsim_dsp_reset(ctx);
+    test_cabsim_dsp_extreme_values(ctx);
+    test_cabsim_dsp_normalization_flag(ctx);
+    test_cabsim_dsp_unload_ir(ctx);
+    test_cabsim_dsp_invalid_slot(ctx);
 
     std::printf("\n");
     ctx.summary();
