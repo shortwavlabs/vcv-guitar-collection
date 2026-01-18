@@ -94,6 +94,12 @@ double expectedSampleRate = model->GetExpectedSampleRate();
   - Model name display
   - Sample rate mismatch indicator (when engine rate ≠ model rate)
   - CPU usage meter
+- **Tone Stack (5-Band EQ):**
+  - Bass (~100 Hz) - Low-end body and warmth
+  - Middle (~650 Hz) - Midrange punch
+  - Treble (~3.2 kHz) - High-end clarity
+  - Presence (~3.5 kHz) - Upper-mid articulation and "bite"
+  - Depth (~80 Hz) - Low-end resonance and "thump"
 
 ### File Structure
 
@@ -352,16 +358,23 @@ struct NamPlayerWidget : ModuleWidget {
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         
-        // Knobs - spread across 21HP panel
-        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(26.67, 45)), module, NamPlayer::INPUT_LEVEL_PARAM));
-        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(80.01, 45)), module, NamPlayer::OUTPUT_LEVEL_PARAM));
+        // Input/Output gain knobs (top row)
+        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15, 35)), module, NamPlayer::INPUT_LEVEL_PARAM));
+        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(91, 35)), module, NamPlayer::OUTPUT_LEVEL_PARAM));
         
-        // Mono ports
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(26.67, 110)), module, NamPlayer::AUDIO_INPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(80.01, 110)), module, NamPlayer::AUDIO_OUTPUT));
+        // Tone Stack knobs (middle row - 5 knobs across)
+        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15, 60)), module, NamPlayer::BASS_PARAM));
+        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(34, 60)), module, NamPlayer::MIDDLE_PARAM));
+        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(53, 60)), module, NamPlayer::TREBLE_PARAM));
+        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(72, 60)), module, NamPlayer::PRESENCE_PARAM));
+        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(91, 60)), module, NamPlayer::DEPTH_PARAM));
+        
+        // Mono ports (bottom)
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15, 110)), module, NamPlayer::AUDIO_INPUT));
+        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(91, 110)), module, NamPlayer::AUDIO_OUTPUT));
         
         // Model load indicator (centered)
-        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(53.34, 25)), module, NamPlayer::MODEL_LOADED_LIGHT));
+        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(53.34, 20)), module, NamPlayer::MODEL_LOADED_LIGHT));
         
         // Custom displays (implemented as custom widgets):
         // - Model name display (center area)
@@ -424,3 +437,61 @@ These models are included in the `res/models/` directory and can be loaded via:
 - **File picker:** "Load Custom Model..." option for user's own `.nam` files
 
 Note: The full model collection is bundled initially; this may be trimmed down later if distribution size or performance becomes an issue.
+
+## Signal Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           NamPlayer Signal Flow                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Audio In ──► Input Gain ──► NAM Model ──► Tone Stack ──► Output Gain ──► Out
+│    (±5V)        (0-2x)      (amp sim)       (5-band)        (0-2x)     (±5V)│
+│                                                                             │
+│                              │                │                             │
+│                              ▼                ▼                             │
+│                         [Passthrough     [Bass/Mid/Treble                   │
+│                          if no model]     Presence/Depth]                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Tone Stack (5-Band EQ)
+
+The tone stack is placed **after** NAM processing, allowing users to shape the output tone. This follows the approach of modern amp modelers where the EQ is used as a post-processing tool.
+
+### Filter Specifications
+
+| Control | Type | Center Freq | Q/Bandwidth | Range | Default |
+|---------|------|-------------|-------------|-------|---------|
+| Bass | Low Shelf | 100 Hz | 0.7 | ±12 dB | 0 dB |
+| Middle | Peaking | 650 Hz | 0.8 | ±12 dB | 0 dB |
+| Treble | High Shelf | 3.2 kHz | 0.7 | ±12 dB | 0 dB |
+| Presence | Peaking | 3.5 kHz | 1.0 | ±12 dB | 0 dB |
+| Depth | Peaking | 80 Hz | 0.7 | ±12 dB | 0 dB |
+
+### Implementation
+
+The EQ uses biquad filters from the DSP abstraction layer (`src/dsp/Nam.h`):
+
+```cpp
+// Biquad filter coefficients for each band
+struct ToneStack {
+    BiquadFilter bass;      // Low shelf at 100 Hz
+    BiquadFilter middle;    // Peaking at 650 Hz
+    BiquadFilter treble;    // High shelf at 3.2 kHz
+    BiquadFilter presence;  // Peaking at 3.5 kHz
+    BiquadFilter depth;     // Peaking at 80 Hz
+    
+    void setSampleRate(double sr);
+    void setParameters(float bass, float mid, float treble, float presence, float depth);
+    float process(float sample);
+};
+```
+
+### Why These Frequencies?
+
+- **Bass (100 Hz):** Classic Fender/Marshall bass frequency, controls low-end body
+- **Middle (650 Hz):** Sweet spot for guitar midrange, affects "honk" and "bark"
+- **Treble (3.2 kHz):** High-frequency detail without being too harsh
+- **Presence (3.5 kHz):** Overlaps with treble but narrower Q for "cut" and articulation
+- **Depth (80 Hz):** Sub-bass resonance, adds "thump" without muddying the bass

@@ -377,9 +377,9 @@ Ensure license compatibility:
 ```
 src/
 ├── dsp/
-│   └── Nam.h              # NAM DSP abstraction (resampling, alignment, CPU monitoring)
+│   └── Nam.h              # NAM DSP abstraction (resampling, alignment, CPU monitoring, tone stack)
 ├── NamPlayer.hpp          # Module header
-├── NamPlayer.cpp          # Module implementation + widget (mono I/O, passthrough)
+├── NamPlayer.cpp          # Module implementation + widget (mono I/O, passthrough, 5-band EQ)
 ├── plugin.hpp
 └── plugin.cpp
 ```
@@ -390,6 +390,7 @@ src/
 - **Empty State:** Passthrough (audio passes through unprocessed when no model loaded)
 - **Panel Displays:** Model name, sample rate mismatch indicator, CPU meter
 - **Model Loading:** Submenu for bundled models + file picker for custom
+- **Tone Stack:** 5-band EQ (Bass, Middle, Treble, Presence, Depth) applied after NAM processing
 
 ### Testing Requirements
 

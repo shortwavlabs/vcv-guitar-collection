@@ -122,6 +122,7 @@ This header contains the NAM DSP wrapper with resampling support and proper Eige
  * - Thread-safe model swapping
  * - Passthrough when no model loaded
  * - CPU usage monitoring
+ * - 5-band tone stack (Bass, Middle, Treble, Presence, Depth)
  */
 class NamDSP {
 public:
@@ -147,6 +148,9 @@ public:
     void process(const float* input, float* output, int numFrames);
     void reset();
     
+    // Tone Stack (5-band EQ) - values in dB (-12 to +12)
+    void setToneStack(float bass, float middle, float treble, float presence, float depth);
+    
     // Monitoring
     float getCpuLoad() const { return cpuLoad; }  // 0.0 to 1.0
     bool isSampleRateMismatched() const { return std::abs(engineSampleRate - modelSampleRate) > 1.0; }
@@ -161,6 +165,9 @@ private:
     double engineSampleRate = 48000.0;
     double modelSampleRate = 48000.0;
     
+    // Tone Stack (5-band EQ using biquad filters)
+    ToneStack toneStack;
+    
     // CPU monitoring
     float cpuLoad = 0.f;
     
@@ -172,6 +179,45 @@ private:
     
     void initResampling();
     void cleanupResampling();
+};
+
+/**
+ * ToneStack - 5-band EQ for guitar amp tone shaping
+ * 
+ * Placed after NAM processing to shape output tone:
+ * - Bass (Low Shelf, 100 Hz)
+ * - Middle (Peaking, 650 Hz)  
+ * - Treble (High Shelf, 3.2 kHz)
+ * - Presence (Peaking, 3.5 kHz)
+ * - Depth (Peaking, 80 Hz)
+ */
+struct ToneStack {
+    BiquadFilter bass;      // Low shelf at 100 Hz
+    BiquadFilter middle;    // Peaking at 650 Hz
+    BiquadFilter treble;    // High shelf at 3.2 kHz
+    BiquadFilter presence;  // Peaking at 3.5 kHz
+    BiquadFilter depth;     // Peaking at 80 Hz
+    
+    void setSampleRate(double sr);
+    void setParameters(float bassDb, float midDb, float trebleDb, float presenceDb, float depthDb);
+    float process(float sample);
+    void reset();
+};
+
+/**
+ * BiquadFilter - Second-order IIR filter
+ */
+struct BiquadFilter {
+    // Coefficients
+    float b0, b1, b2, a1, a2;
+    // State
+    float z1 = 0.f, z2 = 0.f;
+    
+    void setLowShelf(double sr, double freq, double q, double gainDb);
+    void setHighShelf(double sr, double freq, double q, double gainDb);
+    void setPeaking(double sr, double freq, double q, double gainDb);
+    float process(float in);
+    void reset() { z1 = z2 = 0.f; }
 };
 ```
 
@@ -194,6 +240,12 @@ struct NamPlayer : Module {
     enum ParamId {
         INPUT_PARAM,
         OUTPUT_PARAM,
+        // Tone Stack (5-band EQ)
+        BASS_PARAM,
+        MIDDLE_PARAM,
+        TREBLE_PARAM,
+        PRESENCE_PARAM,
+        DEPTH_PARAM,
         PARAMS_LEN
     };
     enum InputId {
@@ -213,7 +265,7 @@ struct NamPlayer : Module {
     // Constants
     static constexpr int BLOCK_SIZE = 128;
     
-    // NAM DSP wrapper (handles resampling internally)
+    // NAM DSP wrapper (handles resampling and tone stack internally)
     std::unique_ptr<NamDSP> namDsp;
     std::mutex dspMutex;
     
@@ -295,6 +347,16 @@ void NamPlayer::process(const ProcessArgs& args) {
     float inputGain = params[INPUT_PARAM].getValue();
     float input = inputs[AUDIO_INPUT].getVoltage() / 5.f * inputGain;
     
+    // Update tone stack parameters from knobs (convert 0-1 to -12 to +12 dB)
+    if (namDsp) {
+        float bass = (params[BASS_PARAM].getValue() - 0.5f) * 24.f;      // -12 to +12 dB
+        float middle = (params[MIDDLE_PARAM].getValue() - 0.5f) * 24.f;
+        float treble = (params[TREBLE_PARAM].getValue() - 0.5f) * 24.f;
+        float presence = (params[PRESENCE_PARAM].getValue() - 0.5f) * 24.f;
+        float depth = (params[DEPTH_PARAM].getValue() - 0.5f) * 24.f;
+        namDsp->setToneStack(bass, middle, treble, presence, depth);
+    }
+    
     // Check if model is loaded - passthrough if not
     if (!namDsp || !namDsp->isModelLoaded() || isLoading) {
         // Passthrough: output = input (with gain applied)
@@ -324,7 +386,7 @@ void NamPlayer::process(const ProcessArgs& args) {
     // Advance position
     bufferPos++;
     
-    // Process when buffer is full
+    // Process when buffer is full (NAM + Tone Stack applied internally)
     if (bufferPos >= BLOCK_SIZE) {
         std::lock_guard<std::mutex> lock(dspMutex);
         if (namDsp && namDsp->isModelLoaded()) {
@@ -437,13 +499,20 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
     addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-    // Parameters - spread across 21HP panel
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(26.67, 46.0)), module, NamPlayer::INPUT_PARAM));
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(80.01, 46.0)), module, NamPlayer::OUTPUT_PARAM));
+    // Input/Output gain knobs (large, top row)
+    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15, 35)), module, NamPlayer::INPUT_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(91, 35)), module, NamPlayer::OUTPUT_PARAM));
 
-    // Mono inputs/outputs
-    addInput(createInputCentered<PJ301MPort>(mm2px(Vec(26.67, 96.0)), module, NamPlayer::AUDIO_INPUT));
-    addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(80.01, 96.0)), module, NamPlayer::AUDIO_OUTPUT));
+    // Tone Stack knobs (smaller, middle row - 5 knobs evenly spaced)
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15, 60)), module, NamPlayer::BASS_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(34, 60)), module, NamPlayer::MIDDLE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(53, 60)), module, NamPlayer::TREBLE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(72, 60)), module, NamPlayer::PRESENCE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(91, 60)), module, NamPlayer::DEPTH_PARAM));
+
+    // Mono inputs/outputs (bottom)
+    addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15, 96.0)), module, NamPlayer::AUDIO_INPUT));
+    addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(91, 96.0)), module, NamPlayer::AUDIO_OUTPUT));
 
     // Lights
     addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(53.34, 21.0)), module, NamPlayer::MODEL_LIGHT));
@@ -587,18 +656,34 @@ Height: 128.5mm (standard 3U)
 Template: Based on SWV_21HP_PANEL.svg
 
 Elements (positioned for 21HP):
-- Model indicator light: x=53.34mm (centered), y=21mm (green)
-- Sample rate indicator: x=58mm, y=21mm (yellow, shows when resampling)
-- Model name display: center area, y=32-40mm
-- CPU meter: center area, y=60-65mm
-- INPUT knob: x=26.67mm, y=46mm  
-- OUTPUT knob: x=80.01mm, y=46mm
-- Audio In port (mono): x=26.67mm, y=96mm
-- Audio Out port (mono): x=80.01mm, y=96mm
+
+Top Section (y=20-35mm):
+- Model indicator light: x=53.34mm, y=21mm (green)
+- Sample rate indicator: x=58mm, y=21mm (yellow)
+- Model name display: center area, y=28-36mm
+
+Gain Section (y=35mm):
+- INPUT gain knob: x=15mm, y=35mm (large)
+- OUTPUT gain knob: x=91mm, y=35mm (large)
+
+Tone Stack Section (y=60mm) - 5 knobs evenly spaced:
+- BASS knob: x=15mm, y=60mm (small) - Low shelf 100Hz
+- MIDDLE knob: x=34mm, y=60mm (small) - Peaking 650Hz
+- TREBLE knob: x=53mm, y=60mm (small) - High shelf 3.2kHz  
+- PRESENCE knob: x=72mm, y=60mm (small) - Peaking 3.5kHz
+- DEPTH knob: x=91mm, y=60mm (small) - Peaking 80Hz
+
+Display Section (y=75mm):
+- CPU meter: center area, y=75-80mm
+
+I/O Section (y=96mm):
+- Audio In port (mono): x=15mm, y=96mm
+- Audio Out port (mono): x=91mm, y=96mm
 
 Labels:
-- "INPUT" above input knob
-- "OUTPUT" above output knob
+- "INPUT" above input gain knob
+- "OUTPUT" above output gain knob
+- "BASS" "MID" "TREBLE" "PRES" "DEPTH" above tone knobs
 - "IN" below input port
 - "OUT" below output port
 - "NAM PLAYER" at top
