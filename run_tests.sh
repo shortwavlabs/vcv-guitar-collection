@@ -78,6 +78,8 @@ fi
 echo "Running tests..."
 if [[ "$UNAME_S" == "Darwin" ]]; then
   export DYLD_LIBRARY_PATH="$(pwd)/dep/Rack-SDK:$DYLD_LIBRARY_PATH"
+elif [[ "$UNAME_S" == "Linux" ]]; then
+  export LD_LIBRARY_PATH="$(pwd)/dep/Rack-SDK:$LD_LIBRARY_PATH"
 elif [[ "$UNAME_S" == "MINGW"* || "$UNAME_S" == "MSYS"* ]]; then
   # Windows: add Rack SDK to PATH for DLL loading
   export PATH="$(pwd)/dep/Rack-SDK:$PATH"
