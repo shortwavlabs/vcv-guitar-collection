@@ -15,9 +15,14 @@ FLAGS += -I$(NAM_DIR)/Dependencies/nlohmann
 # FLAGS += -DEIGEN_MAX_ALIGN_BYTES=0
 # FLAGS += -DEIGEN_DONT_VECTORIZE
 
+# Platform-specific flags
 # NAM requires macOS 10.15+ for std::filesystem and C++17
-# EXTRA_FLAGS is appended after SDK defaults, so it will override them
-EXTRA_FLAGS := -mmacosx-version-min=10.15 -std=c++17
+# Only set macOS version flag on macOS builds
+ifeq ($(shell uname -s),Darwin)
+    EXTRA_FLAGS := -mmacosx-version-min=10.15 -std=c++17
+else
+    EXTRA_FLAGS := -std=c++17
+endif
 
 # Careful about linking to shared libraries, since you can't assume much about the user's environment and library search path.
 # Static libraries are fine, but they should be added to this plugin's build system.
