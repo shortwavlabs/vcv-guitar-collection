@@ -46,6 +46,7 @@ NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/wavenet.cpp"
   -Idep/Rack-SDK/include \
   -Idep/Rack-SDK/dep/include \
   -DSHORTWAV_DSP_RUN_TESTS \
+  -D_USE_MATH_DEFINES \
   -o "$OUT_BIN" \
   src/tests/test_swv_guitar_collection.cpp \
   $NAM_SOURCES \

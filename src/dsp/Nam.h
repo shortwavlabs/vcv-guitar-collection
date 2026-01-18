@@ -1,5 +1,10 @@
 #pragma once
 
+// Define M_PI for Windows before including cmath
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
 #include "NAM/dsp.h"
 #include "NAM/get_dsp.h"
 #include "NAM/activations.h"
