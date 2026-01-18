@@ -377,9 +377,9 @@ Ensure license compatibility:
 ```
 src/
 ├── dsp/
-│   └── Nam.h              # NAM DSP abstraction (resampling, alignment, CPU monitoring, tone stack)
+│   └── Nam.h              # NAM DSP abstraction (noise gate, resampling, tone stack)
 ├── NamPlayer.hpp          # Module header
-├── NamPlayer.cpp          # Module implementation + widget (mono I/O, passthrough, 5-band EQ)
+├── NamPlayer.cpp          # Module implementation + widget
 ├── plugin.hpp
 └── plugin.cpp
 ```
@@ -388,9 +388,11 @@ src/
 
 - **I/O:** Mono input, mono output (guitar amps are inherently mono)
 - **Empty State:** Passthrough (audio passes through unprocessed when no model loaded)
-- **Panel Displays:** Model name, sample rate mismatch indicator, CPU meter
+- **Panel Displays:** Model name, sample rate mismatch indicator, CPU meter, gate activity
 - **Model Loading:** Submenu for bundled models + file picker for custom
-- **Tone Stack:** 5-band EQ (Bass, Middle, Treble, Presence, Depth) applied after NAM processing
+- **Signal Flow:** Input → Gain → Noise Gate → NAM → Tone Stack → Output Gain → Output
+- **Noise Gate:** Hysteresis-based gate before NAM (Threshold, Attack, Release, Hold)
+- **Tone Stack:** 5-band EQ after NAM (Bass, Middle, Treble, Presence, Depth)
 
 ### Testing Requirements
 

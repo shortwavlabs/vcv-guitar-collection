@@ -154,11 +154,11 @@ swv-guitar-collection/
 │       └── *.nam
 ├── src/
 │   ├── dsp/
-│   │   └── Nam.h                 # NAM DSP abstraction (resampling, alignment, CPU monitoring, tone stack)
+│   │   └── Nam.h                 # NAM DSP abstraction (resampling, noise gate, tone stack)
 │   ├── plugin.cpp
 │   ├── plugin.hpp
 │   ├── NamPlayer.hpp            # NAM module header
-│   └── NamPlayer.cpp            # NAM module implementation + widget (mono I/O, 5-band EQ)
+│   └── NamPlayer.cpp            # NAM module implementation + widget
 ├── Makefile
 └── plugin.json
 ```

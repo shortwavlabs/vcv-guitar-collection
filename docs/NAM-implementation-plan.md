@@ -122,6 +122,7 @@ This header contains the NAM DSP wrapper with resampling support and proper Eige
  * - Thread-safe model swapping
  * - Passthrough when no model loaded
  * - CPU usage monitoring
+ * - Noise gate (before NAM processing)
  * - 5-band tone stack (Bass, Middle, Treble, Presence, Depth)
  */
 class NamDSP {
@@ -148,6 +149,10 @@ public:
     void process(const float* input, float* output, int numFrames);
     void reset();
     
+    // Noise Gate - values in dB/ms
+    void setNoiseGate(float thresholdDb, float attackMs, float releaseMs, float holdMs);
+    bool isGateOpen() const { return noiseGate.isOpen; }  // For LED indicator
+    
     // Tone Stack (5-band EQ) - values in dB (-12 to +12)
     void setToneStack(float bass, float middle, float treble, float presence, float depth);
     
@@ -165,7 +170,10 @@ private:
     double engineSampleRate = 48000.0;
     double modelSampleRate = 48000.0;
     
-    // Tone Stack (5-band EQ using biquad filters)
+    // Noise Gate (before NAM)
+    NoiseGate noiseGate;
+    
+    // Tone Stack (5-band EQ using biquad filters, after NAM)
     ToneStack toneStack;
     
     // CPU monitoring
@@ -179,6 +187,38 @@ private:
     
     void initResampling();
     void cleanupResampling();
+};
+
+/**
+ * NoiseGate - Hysteresis-based noise gate for guitar
+ * 
+ * Uses RMS envelope detection with hysteresis to prevent
+ * chattering on decaying notes. Placed before NAM processing
+ * since distortion amplifies noise.
+ */
+struct NoiseGate {
+    // Parameters
+    float threshold = -50.f;    // dB
+    float attack = 0.0005f;     // seconds
+    float release = 0.1f;       // seconds  
+    float hold = 0.05f;         // seconds
+    float hysteresis = 6.f;     // dB
+    
+    // State
+    float envelope = 0.f;
+    float gain = 0.f;
+    float holdCounter = 0.f;
+    bool isOpen = false;
+    
+    // Coefficients
+    float envAttack, envRelease;
+    float gainAttack, gainRelease;
+    double sampleRate = 48000.0;
+    
+    void setSampleRate(double sr);
+    void setParameters(float threshDb, float attackMs, float releaseMs, float holdMs);
+    float process(float sample);
+    void reset();
 };
 
 /**
@@ -240,6 +280,11 @@ struct NamPlayer : Module {
     enum ParamId {
         INPUT_PARAM,
         OUTPUT_PARAM,
+        // Noise Gate
+        GATE_THRESHOLD_PARAM,
+        GATE_ATTACK_PARAM,
+        GATE_RELEASE_PARAM,
+        GATE_HOLD_PARAM,
         // Tone Stack (5-band EQ)
         BASS_PARAM,
         MIDDLE_PARAM,
@@ -259,6 +304,7 @@ struct NamPlayer : Module {
     enum LightId {
         MODEL_LIGHT,
         SAMPLE_RATE_LIGHT,  // Indicates sample rate mismatch
+        GATE_LIGHT,         // Shows when gate is open
         LIGHTS_LEN
     };
 
@@ -347,6 +393,15 @@ void NamPlayer::process(const ProcessArgs& args) {
     float inputGain = params[INPUT_PARAM].getValue();
     float input = inputs[AUDIO_INPUT].getVoltage() / 5.f * inputGain;
     
+    // Update noise gate parameters from knobs
+    if (namDsp) {
+        float threshold = params[GATE_THRESHOLD_PARAM].getValue();  // -80 to 0 dB
+        float attack = params[GATE_ATTACK_PARAM].getValue();        // 0.1 to 10 ms
+        float release = params[GATE_RELEASE_PARAM].getValue();      // 10 to 500 ms
+        float hold = params[GATE_HOLD_PARAM].getValue();            // 10 to 500 ms
+        namDsp->setNoiseGate(threshold, attack, release, hold);
+    }
+    
     // Update tone stack parameters from knobs (convert 0-1 to -12 to +12 dB)
     if (namDsp) {
         float bass = (params[BASS_PARAM].getValue() - 0.5f) * 24.f;      // -12 to +12 dB
@@ -365,6 +420,7 @@ void NamPlayer::process(const ProcessArgs& args) {
         
         lights[MODEL_LIGHT].setBrightness(isLoading ? 0.5f : 0.f);
         lights[SAMPLE_RATE_LIGHT].setBrightness(0.f);
+        lights[GATE_LIGHT].setBrightness(0.f);
         return;
     }
     
@@ -373,6 +429,9 @@ void NamPlayer::process(const ProcessArgs& args) {
     
     // Sample rate mismatch indicator
     lights[SAMPLE_RATE_LIGHT].setBrightness(namDsp->isSampleRateMismatched() ? 1.f : 0.f);
+    
+    // Gate activity indicator
+    lights[GATE_LIGHT].setBrightness(namDsp->isGateOpen() ? 1.f : 0.2f);
     
     // Update CPU load for display
     cpuLoad = namDsp->getCpuLoad();
@@ -386,7 +445,7 @@ void NamPlayer::process(const ProcessArgs& args) {
     // Advance position
     bufferPos++;
     
-    // Process when buffer is full (NAM + Tone Stack applied internally)
+    // Process when buffer is full (Gate -> NAM -> Tone Stack applied internally)
     if (bufferPos >= BLOCK_SIZE) {
         std::lock_guard<std::mutex> lock(dspMutex);
         if (namDsp && namDsp->isModelLoaded()) {
@@ -499,27 +558,34 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
     addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-    // Input/Output gain knobs (large, top row)
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15, 35)), module, NamPlayer::INPUT_PARAM));
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(91, 35)), module, NamPlayer::OUTPUT_PARAM));
+    // Input/Output gain knobs (large, top corners)
+    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15, 30)), module, NamPlayer::INPUT_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(91, 30)), module, NamPlayer::OUTPUT_PARAM));
 
-    // Tone Stack knobs (smaller, middle row - 5 knobs evenly spaced)
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15, 60)), module, NamPlayer::BASS_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(34, 60)), module, NamPlayer::MIDDLE_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(53, 60)), module, NamPlayer::TREBLE_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(72, 60)), module, NamPlayer::PRESENCE_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(91, 60)), module, NamPlayer::DEPTH_PARAM));
+    // Noise Gate knobs (small, second row)
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15, 50)), module, NamPlayer::GATE_THRESHOLD_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(34, 50)), module, NamPlayer::GATE_ATTACK_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(53, 50)), module, NamPlayer::GATE_RELEASE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(72, 50)), module, NamPlayer::GATE_HOLD_PARAM));
+
+    // Tone Stack knobs (small, third row - 5 knobs evenly spaced)
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15, 70)), module, NamPlayer::BASS_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(34, 70)), module, NamPlayer::MIDDLE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(53, 70)), module, NamPlayer::TREBLE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(72, 70)), module, NamPlayer::PRESENCE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(91, 70)), module, NamPlayer::DEPTH_PARAM));
 
     // Mono inputs/outputs (bottom)
-    addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15, 96.0)), module, NamPlayer::AUDIO_INPUT));
-    addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(91, 96.0)), module, NamPlayer::AUDIO_OUTPUT));
+    addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15, 100)), module, NamPlayer::AUDIO_INPUT));
+    addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(91, 100)), module, NamPlayer::AUDIO_OUTPUT));
 
-    // Lights
-    addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(53.34, 21.0)), module, NamPlayer::MODEL_LIGHT));
-    addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(58.0, 21.0)), module, NamPlayer::SAMPLE_RATE_LIGHT));
+    // Lights (top center area)
+    addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(45, 20)), module, NamPlayer::MODEL_LIGHT));
+    addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(53, 20)), module, NamPlayer::SAMPLE_RATE_LIGHT));
+    addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(61, 20)), module, NamPlayer::GATE_LIGHT));
     
     // Custom displays (see custom widget implementations):
-    // - ModelNameDisplay: shows loaded model name (center)
+    // - ModelNameDisplay: shows loaded model name (center top)
     // - CpuMeter: shows CPU usage percentage
 }
 
@@ -657,35 +723,43 @@ Template: Based on SWV_21HP_PANEL.svg
 
 Elements (positioned for 21HP):
 
-Top Section (y=20-35mm):
-- Model indicator light: x=53.34mm, y=21mm (green)
-- Sample rate indicator: x=58mm, y=21mm (yellow)
-- Model name display: center area, y=28-36mm
+Top Section (y=20mm):
+- Model indicator light: x=45mm (green)
+- Sample rate indicator: x=53mm (yellow) 
+- Gate activity light: x=61mm (green)
+- Model name display: center area, y=10-18mm
 
-Gain Section (y=35mm):
-- INPUT gain knob: x=15mm, y=35mm (large)
-- OUTPUT gain knob: x=91mm, y=35mm (large)
+Gain Section (y=30mm):
+- INPUT gain knob: x=15mm (large)
+- OUTPUT gain knob: x=91mm (large)
 
-Tone Stack Section (y=60mm) - 5 knobs evenly spaced:
-- BASS knob: x=15mm, y=60mm (small) - Low shelf 100Hz
-- MIDDLE knob: x=34mm, y=60mm (small) - Peaking 650Hz
-- TREBLE knob: x=53mm, y=60mm (small) - High shelf 3.2kHz  
-- PRESENCE knob: x=72mm, y=60mm (small) - Peaking 3.5kHz
-- DEPTH knob: x=91mm, y=60mm (small) - Peaking 80Hz
+Noise Gate Section (y=50mm) - 4 knobs:
+- THRESHOLD knob: x=15mm (small) - -80 to 0 dB
+- ATTACK knob: x=34mm (small) - 0.1 to 10 ms
+- RELEASE knob: x=53mm (small) - 10 to 500 ms
+- HOLD knob: x=72mm (small) - 10 to 500 ms
 
-Display Section (y=75mm):
-- CPU meter: center area, y=75-80mm
+Tone Stack Section (y=70mm) - 5 knobs:
+- BASS knob: x=15mm (small) - Low shelf 100Hz
+- MIDDLE knob: x=34mm (small) - Peaking 650Hz
+- TREBLE knob: x=53mm (small) - High shelf 3.2kHz  
+- PRESENCE knob: x=72mm (small) - Peaking 3.5kHz
+- DEPTH knob: x=91mm (small) - Peaking 80Hz
 
-I/O Section (y=96mm):
-- Audio In port (mono): x=15mm, y=96mm
-- Audio Out port (mono): x=91mm, y=96mm
+Display Section (y=85mm):
+- CPU meter: center area
+
+I/O Section (y=100mm):
+- Audio In port (mono): x=15mm
+- Audio Out port (mono): x=91mm
 
 Labels:
-- "INPUT" above input gain knob
-- "OUTPUT" above output gain knob
-- "BASS" "MID" "TREBLE" "PRES" "DEPTH" above tone knobs
-- "IN" below input port
-- "OUT" below output port
+- "INPUT" / "OUTPUT" above gain knobs
+- "GATE" section label
+- "THRESH" "ATK" "REL" "HOLD" above gate knobs
+- "TONE" section label  
+- "BASS" "MID" "TREB" "PRES" "DEPTH" above tone knobs
+- "IN" / "OUT" below ports
 - "NAM PLAYER" at top
 ```
 

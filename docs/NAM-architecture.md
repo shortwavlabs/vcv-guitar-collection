@@ -94,6 +94,10 @@ double expectedSampleRate = model->GetExpectedSampleRate();
   - Model name display
   - Sample rate mismatch indicator (when engine rate ≠ model rate)
   - CPU usage meter
+  - Gate activity indicator
+- **Noise Gate:** Placed before NAM processing to suppress input noise
+  - Threshold, Attack, Release, Hold controls
+  - Hysteresis to prevent chattering on decaying notes
 - **Tone Stack (5-Band EQ):**
   - Bass (~100 Hz) - Low-end body and warmth
   - Middle (~650 Hz) - Midrange punch
@@ -121,18 +125,31 @@ struct NamPlayer : rack::Module {
     enum ParamId {
         INPUT_LEVEL_PARAM,
         OUTPUT_LEVEL_PARAM,
+        // Noise Gate
+        GATE_THRESHOLD_PARAM,
+        GATE_ATTACK_PARAM,
+        GATE_RELEASE_PARAM,
+        GATE_HOLD_PARAM,
+        // Tone Stack (5-band EQ)
+        BASS_PARAM,
+        MIDDLE_PARAM,
+        TREBLE_PARAM,
+        PRESENCE_PARAM,
+        DEPTH_PARAM,
         PARAMS_LEN
     };
     enum InputId {
-        AUDIO_INPUT,
+        AUDIO_INPUT,  // Mono
         INPUTS_LEN
     };
     enum OutputId {
-        AUDIO_OUTPUT,
+        AUDIO_OUTPUT,  // Mono
         OUTPUTS_LEN
     };
     enum LightId {
         MODEL_LOADED_LIGHT,
+        SAMPLE_RATE_LIGHT,
+        GATE_ACTIVE_LIGHT,  // Shows when gate is open
         LIGHTS_LEN
     };
     
@@ -224,6 +241,90 @@ class NamDSP {
 };
 ```
 
+## Signal Flow
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│                           NamPlayer Signal Flow                                       │
+├──────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  Audio In ─► Input Gain ─► Noise Gate ─► NAM Model ─► Tone Stack ─► Output Gain ─► Out
+│    (±5V)      (0-2x)       (suppress)    (amp sim)     (5-band)      (0-2x)      (±5V)
+│                                                                                      │
+│                              │             │               │                         │
+│                              ▼             ▼               ▼                         │
+│                         [Threshold    [Passthrough    [Bass/Mid/Treble               │
+│                          Attack        if no model]    Presence/Depth]               │
+│                          Release                                                     │
+│                          Hold]                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Why Noise Gate Before NAM?**
+
+The noise gate is placed **before** NAM processing because:
+1. Distortion amplifies noise - gating after would require extreme thresholds
+2. High-gain amp models are particularly sensitive to input noise
+3. This matches real guitar rig signal chains (gate before amp)
+
+## Noise Gate
+
+The noise gate uses a **hysteresis envelope follower** design to prevent chattering on decaying notes.
+
+### Parameters
+
+| Parameter | Range | Default | Description |
+|-----------|-------|---------|-------------|
+| Threshold | -80 to 0 dB | -50 dB | Level below which gate closes |
+| Attack | 0.1 - 10 ms | 0.5 ms | How quickly gate opens (fast for pick transients) |
+| Release | 10 - 500 ms | 100 ms | How quickly gate closes (smooth for sustain) |
+| Hold | 10 - 500 ms | 50 ms | Time to keep gate open after signal drops |
+
+### Algorithm
+
+```cpp
+/**
+ * NoiseGate - Hysteresis-based noise gate for guitar
+ * 
+ * Uses RMS envelope detection with hysteresis to prevent
+ * chattering on decaying notes. The gate opens when signal
+ * exceeds threshold, and closes when it drops below
+ * threshold - hysteresis for a specified hold time.
+ */
+struct NoiseGate {
+    // Parameters
+    float threshold = -50.f;    // dB
+    float attack = 0.0005f;     // seconds
+    float release = 0.1f;       // seconds
+    float hold = 0.05f;         // seconds
+    float hysteresis = 6.f;     // dB (close threshold = open threshold - hysteresis)
+    
+    // State
+    float envelope = 0.f;       // RMS envelope
+    float gain = 0.f;           // Current gate gain (0-1)
+    float holdCounter = 0.f;    // Hold time counter
+    bool isOpen = false;
+    
+    // Coefficients (computed from sample rate)
+    float envAttack, envRelease;
+    float gainAttack, gainRelease;
+    
+    void setSampleRate(double sr);
+    void setParameters(float threshDb, float attackMs, float releaseMs, float holdMs);
+    float process(float sample);  // Returns gated sample
+    bool getGateState() const { return isOpen; }  // For LED indicator
+    void reset();
+};
+```
+
+### Implementation Details
+
+1. **Envelope Detection:** RMS-based envelope follower with separate attack/release
+2. **Hysteresis:** Open threshold is higher than close threshold by ~6dB to prevent chattering
+3. **Hold Timer:** Keeps gate open for specified time after signal drops below threshold
+4. **Smooth Gain:** Attack/release applied to gain reduction for smooth transitions
+5. **No Lookahead:** For zero latency (lookahead would add delay)
+
 ## Data Flow Diagram
 
 ```
@@ -234,15 +335,16 @@ class NamDSP {
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   NAMPlayerModule::process()                    │
+│                   NamPlayer::process()                          │
 │                                                                 │
 │  1. Get input voltage (±5V) → normalize to ±1.0                │
-│  2. Convert float → NAM_SAMPLE (double)                        │
-│  3. Accumulate in input buffer                                 │
-│  4. When buffer full: call namModel->process()                 │
-│  5. Read from output buffer                                    │
-│  6. Convert NAM_SAMPLE → float                                 │
-│  7. Scale to voltage (±5V) → output                            │
+│  2. Apply input gain                                           │
+│  3. Apply noise gate                                           │
+│  4. Accumulate in input buffer                                 │
+│  5. When buffer full: call namDsp->process()                   │
+│  6. Apply tone stack (5-band EQ)                               │
+│  7. Apply output gain                                          │
+│  8. Scale to voltage (±5V) → output                            │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -441,19 +543,86 @@ Note: The full model collection is bundled initially; this may be trimmed down l
 ## Signal Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           NamPlayer Signal Flow                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Audio In ──► Input Gain ──► NAM Model ──► Tone Stack ──► Output Gain ──► Out
-│    (±5V)        (0-2x)      (amp sim)       (5-band)        (0-2x)     (±5V)│
-│                                                                             │
-│                              │                │                             │
-│                              ▼                ▼                             │
-│                         [Passthrough     [Bass/Mid/Treble                   │
-│                          if no model]     Presence/Depth]                   │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│                           NamPlayer Signal Flow                                   │
+├──────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                    │
+│  Audio In ─► Input Gain ─► Noise Gate ─► NAM Model ─► Tone Stack ─► Output Gain ─► Out
+│    (±5V)      (0-2x)      (suppress)    (amp sim)      (5-band)      (0-2x)     (±5V)
+│                                                                                    │
+│                              │             │               │                        │
+│                              ▼             ▼               ▼                        │
+│                         [Threshold    [Passthrough    [Bass/Mid/Treble            │
+│                          Attack        if no model]    Presence/Depth]            │
+│                          Release                                                  │
+│                          Hold]                                                    │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Why Noise Gate Before NAM?**
+
+The noise gate is placed **before** NAM processing because:
+1. Distortion amplifies noise - gating after would require extreme thresholds
+2. High-gain amp models are particularly sensitive to input noise
+3. This matches real guitar rig signal chains (gate before amp)
+
+## Noise Gate
+
+The noise gate uses a **hysteresis envelope follower** design to prevent chattering on decaying notes.
+
+### Parameters
+
+| Parameter | Range | Default | Description |
+|-----------|-------|---------|-------------|
+| Threshold | -80 to 0 dB | -50 dB | Level below which gate closes |
+| Attack | 0.1 - 10 ms | 0.5 ms | How quickly gate opens (fast for pick transients) |
+| Release | 10 - 500 ms | 100 ms | How quickly gate closes (smooth for sustain) |
+| Hold | 10 - 500 ms | 50 ms | Time to keep gate open after signal drops |
+
+### Algorithm
+
+```cpp
+/**
+ * NoiseGate - Hysteresis-based noise gate for guitar
+ * 
+ * Uses RMS envelope detection with hysteresis to prevent
+ * chattering on decaying notes. The gate opens when signal
+ * exceeds threshold, and closes when it drops below
+ * threshold - hysteresis for a specified hold time.
+ */
+struct NoiseGate {
+    // Parameters
+    float threshold = -50.f;    // dB
+    float attack = 0.0005f;     // seconds
+    float release = 0.1f;       // seconds
+    float hold = 0.05f;         // seconds
+    float hysteresis = 6.f;     // dB (close threshold = open threshold - hysteresis)
+    
+    // State
+    float envelope = 0.f;       // RMS envelope
+    float gain = 0.f;           // Current gate gain (0-1)
+    float holdCounter = 0.f;    // Hold time counter
+    bool isOpen = false;
+    
+    // Coefficients (computed from sample rate)
+    float envAttack, envRelease;
+    float gainAttack, gainRelease;
+    
+    void setSampleRate(double sr);
+    void setParameters(float threshDb, float attackMs, float releaseMs, float holdMs);
+    float process(float sample);  // Returns gated sample
+    bool getGateState() const { return isOpen; }  // For LED indicator
+    void reset();
+};
+```
+
+### Implementation Details
+
+1. **Envelope Detection:** RMS-based envelope follower with separate attack/release
+2. **Hysteresis:** Open threshold is higher than close threshold by ~6dB to prevent chattering
+3. **Hold Timer:** Keeps gate open for specified time after signal drops below threshold
+4. **Smooth Gain:** Attack/release applied to gain reduction for smooth transitions
+5. **No Lookahead:** For zero latency (lookahead would add delay)
 
 ## Tone Stack (5-Band EQ)
 
