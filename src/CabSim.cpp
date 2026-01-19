@@ -41,6 +41,29 @@ CabSim::~CabSim() {
 }
 
 void CabSim::process(const ProcessArgs& args) {
+    if (hasPendingSampleRate.exchange(false, std::memory_order_acq_rel)) {
+        float newRate = pendingSampleRate.load(std::memory_order_acquire);
+        if (cabSimDsp) {
+            cabSimDsp->setSampleRate(newRate);
+        }
+        lastLpFreq = -1.f;
+        lastHpFreq = -1.f;
+    }
+    if (cabSimDsp) {
+        for (int slot = 0; slot < 2; ++slot) {
+            if (hasPendingIrUnload[slot].exchange(false, std::memory_order_acq_rel)) {
+                cabSimDsp->unloadIR(slot);
+            }
+            if (hasPendingIr[slot].exchange(false, std::memory_order_acq_rel)) {
+                std::vector<float> samples = std::move(pendingIrSamples[slot]);
+                std::string path = std::move(pendingIrPath[slot]);
+                std::string name = std::move(pendingIrName[slot]);
+                if (!samples.empty()) {
+                    cabSimDsp->setIRKernel(slot, samples, path, name);
+                }
+            }
+        }
+    }
     // Get mono input (normalized to ±1.0)
     float input = inputs[AUDIO_INPUT].getVoltage() / 5.f;
     
@@ -54,11 +77,19 @@ void CabSim::process(const ProcessArgs& args) {
     float hpFreq = 20.f * std::pow(100.f, params[HIGHPASS_PARAM].getValue());
     
     float outputGain = params[OUTPUT_PARAM].getValue();
-    
+
+    // Update filter coefficients only when parameters change
+    if (cabSimDsp) {
+        if (std::abs(lpFreq - lastLpFreq) > 1.f || std::abs(hpFreq - lastHpFreq) > 1.f) {
+            cabSimDsp->setFilterFrequencies(lpFreq, hpFreq);
+            lastLpFreq = lpFreq;
+            lastHpFreq = hpFreq;
+        }
+    }
+
     // Process through DSP
     float output = 0.f;
     if (cabSimDsp) {
-        std::lock_guard<std::mutex> lock(dspMutex);
         output = cabSimDsp->process(input, blend, lpFreq, hpFreq);
     } else {
         output = input;  // Passthrough if no DSP
@@ -89,18 +120,13 @@ void CabSim::onSampleRateChange(const SampleRateChangeEvent& e) {
     float newSampleRate = e.sampleRate;
     
     // Skip if sample rate hasn't actually changed
-    if (std::abs(currentSampleRate - newSampleRate) < 1.f) {
+    if (std::abs(currentSampleRate.load(std::memory_order_acquire) - newSampleRate) < 1.f) {
         return;
     }
     
-    currentSampleRate = newSampleRate;
-    
-    {
-        std::lock_guard<std::mutex> lock(dspMutex);
-        if (cabSimDsp) {
-            cabSimDsp->setSampleRate(currentSampleRate);
-        }
-    }
+    currentSampleRate.store(newSampleRate, std::memory_order_release);
+    pendingSampleRate.store(newSampleRate, std::memory_order_release);
+    hasPendingSampleRate.store(true, std::memory_order_release);
     
     // Reload IRs at new sample rate if they were loaded
     // Store current paths since they'll be used by the background thread
@@ -123,15 +149,15 @@ void CabSim::onSampleRateChange(const SampleRateChangeEvent& e) {
                 try {
                     IRLoader loader;
                     if (loader.load(pathA)) {
-                        loader.resampleTo(currentSampleRate);
+                        loader.resampleTo(currentSampleRate.load(std::memory_order_acquire));
                         if (normalizeA) {
                             loader.normalize();
                         }
-                        {
-                            std::lock_guard<std::mutex> lock(dspMutex);
-                            cabSimDsp->setIRKernel(0, loader.getSamples(),
-                                                   loader.getPath(), loader.getName());
-                        }
+                        hasPendingIr[0].store(false, std::memory_order_release);
+                        pendingIrSamples[0] = loader.getSamples();
+                        pendingIrPath[0] = loader.getPath();
+                        pendingIrName[0] = loader.getName();
+                        hasPendingIr[0].store(true, std::memory_order_release);
                     }
                 } catch (const std::exception& e) {
                     WARN("Exception reloading IR A at new sample rate: %s", e.what());
@@ -144,15 +170,15 @@ void CabSim::onSampleRateChange(const SampleRateChangeEvent& e) {
                 try {
                     IRLoader loader;
                     if (loader.load(pathB)) {
-                        loader.resampleTo(currentSampleRate);
+                        loader.resampleTo(currentSampleRate.load(std::memory_order_acquire));
                         if (normalizeB) {
                             loader.normalize();
                         }
-                        {
-                            std::lock_guard<std::mutex> lock(dspMutex);
-                            cabSimDsp->setIRKernel(1, loader.getSamples(),
-                                                   loader.getPath(), loader.getName());
-                        }
+                        hasPendingIr[1].store(false, std::memory_order_release);
+                        pendingIrSamples[1] = loader.getSamples();
+                        pendingIrPath[1] = loader.getPath();
+                        pendingIrName[1] = loader.getName();
+                        hasPendingIr[1].store(true, std::memory_order_release);
                     }
                 } catch (const std::exception& e) {
                     WARN("Exception reloading IR B at new sample rate: %s", e.what());
@@ -187,7 +213,7 @@ void CabSim::loadIR(int slot, const std::string& path) {
             
             if (loader.load(path)) {
                 // Resample to current engine rate
-                loader.resampleTo(currentSampleRate);
+                loader.resampleTo(currentSampleRate.load(std::memory_order_acquire));
                 
                 // Apply normalization if enabled
                 bool shouldNormalize = (slot == 0) ? normalizeA : normalizeB;
@@ -196,11 +222,11 @@ void CabSim::loadIR(int slot, const std::string& path) {
                 }
                 
                 // Set the IR in DSP (thread-safe via mutex in process())
-                {
-                    std::lock_guard<std::mutex> lock(dspMutex);
-                    cabSimDsp->setIRKernel(slot, loader.getSamples(), 
-                                           loader.getPath(), loader.getName());
-                }
+                hasPendingIr[slot].store(false, std::memory_order_release);
+                pendingIrSamples[slot] = loader.getSamples();
+                pendingIrPath[slot] = loader.getPath();
+                pendingIrName[slot] = loader.getName();
+                hasPendingIr[slot].store(true, std::memory_order_release);
                 
                 // Store path for serialization
                 if (slot == 0) {
@@ -222,11 +248,7 @@ void CabSim::loadIR(int slot, const std::string& path) {
 
 void CabSim::unloadIR(int slot) {
     if (slot < 0 || slot > 1) return;
-    
-    std::lock_guard<std::mutex> lock(dspMutex);
-    if (cabSimDsp) {
-        cabSimDsp->unloadIR(slot);
-    }
+    hasPendingIrUnload[slot].store(true, std::memory_order_release);
     
     if (slot == 0) {
         irPathA.clear();
@@ -344,15 +366,15 @@ void CabSim::dataFromJson(json_t* rootJ) {
                 try {
                     IRLoader loader;
                     if (loader.load(pathA)) {
-                        loader.resampleTo(currentSampleRate);
+                        loader.resampleTo(currentSampleRate.load(std::memory_order_acquire));
                         if (normalizeA) {
                             loader.normalize();
                         }
-                        {
-                            std::lock_guard<std::mutex> lock(dspMutex);
-                            cabSimDsp->setIRKernel(0, loader.getSamples(),
-                                                   loader.getPath(), loader.getName());
-                        }
+                        hasPendingIr[0].store(false, std::memory_order_release);
+                        pendingIrSamples[0] = loader.getSamples();
+                        pendingIrPath[0] = loader.getPath();
+                        pendingIrName[0] = loader.getName();
+                        hasPendingIr[0].store(true, std::memory_order_release);
                         irPathA = pathA;
                     } else {
                         WARN("Failed to load IR A: %s", pathA.c_str());
@@ -368,15 +390,15 @@ void CabSim::dataFromJson(json_t* rootJ) {
                 try {
                     IRLoader loader;
                     if (loader.load(pathB)) {
-                        loader.resampleTo(currentSampleRate);
+                        loader.resampleTo(currentSampleRate.load(std::memory_order_acquire));
                         if (normalizeB) {
                             loader.normalize();
                         }
-                        {
-                            std::lock_guard<std::mutex> lock(dspMutex);
-                            cabSimDsp->setIRKernel(1, loader.getSamples(),
-                                                   loader.getPath(), loader.getName());
-                        }
+                        hasPendingIr[1].store(false, std::memory_order_release);
+                        pendingIrSamples[1] = loader.getSamples();
+                        pendingIrPath[1] = loader.getPath();
+                        pendingIrName[1] = loader.getName();
+                        hasPendingIr[1].store(true, std::memory_order_release);
                         irPathB = pathB;
                     } else {
                         WARN("Failed to load IR B: %s", pathB.c_str());
@@ -395,36 +417,35 @@ void CabSim::dataFromJson(json_t* rootJ) {
 // Widget implementation
 CabSimWidget::CabSimWidget(CabSim* module) {
     setModule(module);
-    setPanel(createPanel(asset::plugin(pluginInstance, "res/CabSim.svg")));
+    setPanel(createPanel(asset::plugin(pluginInstance, "res/CABSIM_PANEL.svg")));
 
-    // Module is 12HP = 60.96mm wide
-    // Center X = 30.48mm
+    // Module is 8HP = 120px
+    // Center X = 60
+    float centerX = box.size.x / 2.0f;
     
     // Screws (4 corners)
-    addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-    addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+    addChild(createWidget<ScrewSilver>(Vec(0, 0)));
+    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
     // Blend knob (large, centered at top)
-    addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(30.48, 30)), module, CabSim::BLEND_PARAM));
-    
-    // Filter knobs (medium, side by side)
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15, 55)), module, CabSim::HIGHPASS_PARAM));
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(45, 55)), module, CabSim::LOWPASS_PARAM));
-    
-    // Output knob (medium, centered)
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30.48, 80)), module, CabSim::OUTPUT_PARAM));
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(centerX, 50), module, CabSim::BLEND_PARAM));
 
-    // Input jack (left side, bottom)
-    addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15, 105)), module, CabSim::AUDIO_INPUT));
-    
-    // Output jack (right side, bottom)
-    addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(45, 105)), module, CabSim::AUDIO_OUTPUT));
+    // Filter knobs (medium, side by side)
+    addParam(createParamCentered<RoundBlackKnob>(Vec(25, 135), module, CabSim::HIGHPASS_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(box.size.x - 25, 135), module, CabSim::LOWPASS_PARAM));
+
+    // Output knob (medium, centered)
+    addParam(createParamCentered<RoundLargeBlackKnob>(Vec(centerX, 195), module, CabSim::OUTPUT_PARAM));
 
     // IR Lights (above the I/O jacks)
-    addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(15, 95)), module, CabSim::IR_A_LIGHT));
-    addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(45, 95)), module, CabSim::IR_B_LIGHT));
+    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(35, 260), module, CabSim::IR_A_LIGHT));
+    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(box.size.x - 35, 260), module, CabSim::IR_B_LIGHT));
+
+    // Input jack (left side, bottom)
+    addInput(createInputCentered<PJ301MPort>(Vec(25, box.size.y - 40), module, CabSim::AUDIO_INPUT));
+
+    // Output jack (right side, bottom)
+    addOutput(createOutputCentered<PJ301MPort>(Vec(box.size.x - 25, box.size.y - 40), module, CabSim::AUDIO_OUTPUT));
 }
 
 void CabSimWidget::appendContextMenu(Menu* menu) {

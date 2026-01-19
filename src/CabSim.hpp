@@ -6,7 +6,6 @@
 #include <memory>
 #include <atomic>
 #include <thread>
-#include <mutex>
 
 struct CabSim : Module {
     enum ParamId {
@@ -32,12 +31,22 @@ struct CabSim : Module {
 
     // DSP
     std::unique_ptr<CabSimDSP> cabSimDsp;
-    std::mutex dspMutex;
     
     // Async loading
     std::thread loadThread;
     std::atomic<bool> isLoading{false};
     std::atomic<int> loadingSlot{-1};
+
+    // Pending IR updates (applied on audio thread)
+    std::vector<float> pendingIrSamples[2];
+    std::string pendingIrPath[2];
+    std::string pendingIrName[2];
+    std::atomic<bool> hasPendingIr[2] = {false, false};
+    std::atomic<bool> hasPendingIrUnload[2] = {false, false};
+
+    // Pending sample rate updates (applied on audio thread)
+    std::atomic<float> pendingSampleRate{48000.f};
+    std::atomic<bool> hasPendingSampleRate{false};
     
     // State for serialization
     std::string irPathA;
@@ -46,7 +55,11 @@ struct CabSim : Module {
     bool normalizeB = false;
     
     // Sample rate
-    float currentSampleRate = 48000.f;
+    std::atomic<float> currentSampleRate{48000.f};
+
+    // Filter cache (avoid per-sample updates)
+    float lastLpFreq = -1.f;
+    float lastHpFreq = -1.f;
     
     CabSim();
     ~CabSim();

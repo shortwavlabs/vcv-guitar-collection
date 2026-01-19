@@ -31,6 +31,7 @@ NamPlayer::NamPlayer() {
     // Pre-allocate buffers
     inputBuffer.resize(BLOCK_SIZE, 0.f);
     outputBuffer.resize(BLOCK_SIZE, 0.f);
+    displayBuffer.resize(DISPLAY_BUFFER_SIZE, 0.f);
     
     // Enable fast tanh for better performance
     nam::activations::Activation::enable_fast_tanh();
@@ -44,6 +45,23 @@ NamPlayer::~NamPlayer() {
 }
 
 void NamPlayer::process(const ProcessArgs& args) {
+    if (hasPendingDsp.exchange(false, std::memory_order_acq_rel)) {
+        namDsp = std::move(pendingDsp);
+    }
+    if (hasPendingUnload.exchange(false, std::memory_order_acq_rel)) {
+        if (namDsp) {
+            namDsp->unloadModel();
+        }
+    }
+    if (hasPendingSampleRate.exchange(false, std::memory_order_acq_rel)) {
+        double newRate = pendingSampleRate.load(std::memory_order_acquire);
+        if (namDsp) {
+            namDsp->setSampleRate(newRate);
+        }
+        if (pendingDsp) {
+            pendingDsp->setSampleRate(newRate);
+        }
+    }
     // Get input with gain (line-level normalization: ±5V -> ±1.0)
     float inputGain = params[INPUT_PARAM].getValue();
     float input = inputs[AUDIO_INPUT].getVoltage() / 5.f * inputGain;
@@ -99,7 +117,6 @@ void NamPlayer::process(const ProcessArgs& args) {
     
     // Process when buffer is full
     if (bufferPos >= BLOCK_SIZE) {
-        std::lock_guard<std::mutex> lock(dspMutex);
         if (namDsp && namDsp->isModelLoaded()) {
             namDsp->process(inputBuffer.data(), outputBuffer.data(), BLOCK_SIZE);
         }
@@ -108,16 +125,18 @@ void NamPlayer::process(const ProcessArgs& args) {
     
     // Apply output gain and send (scale back to ±5V)
     float outputGain = params[OUTPUT_PARAM].getValue();
-    outputs[AUDIO_OUTPUT].setVoltage(output * outputGain * 5.f);
+    float finalOutput = output * outputGain;
+    outputs[AUDIO_OUTPUT].setVoltage(finalOutput * 5.f);
+    
+    // Update display buffer with output sample (normalized to ±1)
+    displayBuffer[displayBufferPos] = finalOutput;
+    displayBufferPos = (displayBufferPos + 1) % DISPLAY_BUFFER_SIZE;
 }
 
 void NamPlayer::onSampleRateChange(const SampleRateChangeEvent& e) {
-    currentSampleRate = e.sampleRate;
-    
-    std::lock_guard<std::mutex> lock(dspMutex);
-    if (namDsp) {
-        namDsp->setSampleRate(currentSampleRate);
-    }
+    currentSampleRate.store(e.sampleRate, std::memory_order_release);
+    pendingSampleRate.store(e.sampleRate, std::memory_order_release);
+    hasPendingSampleRate.store(true, std::memory_order_release);
 }
 
 void NamPlayer::loadModel(const std::string& path) {
@@ -140,13 +159,11 @@ void NamPlayer::loadModel(const std::string& path) {
             
             if (newDsp->loadModel(path)) {
                 // Initialize with current sample rate
-                newDsp->setSampleRate(currentSampleRate);
+                newDsp->setSampleRate(currentSampleRate.load(std::memory_order_acquire));
                 
                 // Swap DSP
-                {
-                    std::lock_guard<std::mutex> lock(dspMutex);
-                    namDsp = std::move(newDsp);
-                }
+                pendingDsp = std::move(newDsp);
+                hasPendingDsp.store(true, std::memory_order_release);
                 
                 loadSuccess = true;
             }
@@ -160,10 +177,7 @@ void NamPlayer::loadModel(const std::string& path) {
 }
 
 void NamPlayer::unloadModel() {
-    std::lock_guard<std::mutex> lock(dspMutex);
-    if (namDsp) {
-        namDsp->unloadModel();
-    }
+    hasPendingUnload.store(true, std::memory_order_release);
 }
 
 std::string NamPlayer::getModelPath() const {
@@ -187,10 +201,37 @@ bool NamPlayer::isSampleRateMismatched() const {
     return false;
 }
 
+void NamPlayer::getWaveformColorRGB(int& r, int& g, int& b) const {
+    switch (waveformColor) {
+        case WaveformColor::Green:
+            r = 100; g = 255; b = 100;
+            break;
+        case WaveformColor::BabyBlue:
+            r = 100; g = 200; b = 255;
+            break;
+        case WaveformColor::Amber:
+            r = 255; g = 180; b = 50;
+            break;
+        case WaveformColor::Red:
+            r = 255; g = 80; b = 80;
+            break;
+        case WaveformColor::Purple:
+            r = 200; g = 100; b = 255;
+            break;
+        case WaveformColor::White:
+            r = 255; g = 255; b = 255;
+            break;
+        default:
+            r = 100; g = 255; b = 100; // Default to Green
+            break;
+    }
+}
+
 json_t* NamPlayer::dataToJson() {
     json_t* rootJ = json_object();
     std::string path = getModelPath();
     json_object_set_new(rootJ, "modelPath", json_string(path.c_str()));
+    json_object_set_new(rootJ, "waveformColor", json_integer(static_cast<int>(waveformColor)));
     return rootJ;
 }
 
@@ -202,46 +243,64 @@ void NamPlayer::dataFromJson(json_t* rootJ) {
             loadModel(path);
         }
     }
+    
+    json_t* colorJ = json_object_get(rootJ, "waveformColor");
+    if (colorJ) {
+        int colorInt = json_integer_value(colorJ);
+        if (colorInt >= 0 && colorInt < static_cast<int>(WaveformColor::NUM_COLORS)) {
+            waveformColor = static_cast<WaveformColor>(colorInt);
+        }
+    }
 }
 
 // Widget implementation
 NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     setModule(module);
-    setPanel(createPanel(asset::plugin(pluginInstance, "res/NamPlayer.svg")));
+    setPanel(createPanel(asset::plugin(pluginInstance, "res/NAM_PANEL.svg")));
 
-    // Module is 21HP = 106.68mm wide
+    // Module is 18HP = 270px
+    // Center X = 135
+    const float centerX = box.size.x / 2.f;
     
-    // Screws (4 corners)
-    addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-    addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+    // Screws
+    addChild(createWidget<ScrewSilver>(Vec(0, 0)));
+    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+    // Output waveform display (below tone stack, above I/O)
+    OutputDisplay* display = new OutputDisplay();
+    display->module = module;
+    display->box.pos = Vec(0, 15);
+    display->box.size = Vec(box.size.x, 70);
+    addChild(display);
+
+    // Tone Stack knobs (small, top row - 5 knobs)
+    float toneY = 140;
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 100, toneY), module, NamPlayer::BASS_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 50, toneY), module, NamPlayer::MIDDLE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX, toneY), module, NamPlayer::TREBLE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 50, toneY), module, NamPlayer::PRESENCE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 100, toneY), module, NamPlayer::DEPTH_PARAM));
+
+    // Noise Gate knobs (small, middle row)
+    float gateY = 225;
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 75, gateY), module, NamPlayer::GATE_THRESHOLD_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 25, gateY), module, NamPlayer::GATE_ATTACK_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 25, gateY), module, NamPlayer::GATE_RELEASE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 75, gateY), module, NamPlayer::GATE_HOLD_PARAM));
+
+    // Lights
+    float lightY = 300;
+    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(centerX - 15, lightY), module, NamPlayer::MODEL_LIGHT));
+    addChild(createLightCentered<SmallLight<YellowLight>>(Vec(centerX, lightY), module, NamPlayer::SAMPLE_RATE_LIGHT));
+    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(centerX + 15, lightY), module, NamPlayer::GATE_LIGHT));
 
     // Input/Output gain knobs (large, top section)
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15, 30)), module, NamPlayer::INPUT_PARAM));
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(91, 30)), module, NamPlayer::OUTPUT_PARAM));
-
-    // Noise Gate knobs (small, second row)
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15, 50)), module, NamPlayer::GATE_THRESHOLD_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(34, 50)), module, NamPlayer::GATE_ATTACK_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(53, 50)), module, NamPlayer::GATE_RELEASE_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(72, 50)), module, NamPlayer::GATE_HOLD_PARAM));
-
-    // Tone Stack knobs (small, third row - 5 knobs)
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15, 70)), module, NamPlayer::BASS_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(34, 70)), module, NamPlayer::MIDDLE_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(53, 70)), module, NamPlayer::TREBLE_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(72, 70)), module, NamPlayer::PRESENCE_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(91, 70)), module, NamPlayer::DEPTH_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(25, box.size.y - 75), module, NamPlayer::INPUT_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(box.size.x - 25, box.size.y - 75), module, NamPlayer::OUTPUT_PARAM));
 
     // Mono inputs/outputs (bottom)
-    addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15, 100)), module, NamPlayer::AUDIO_INPUT));
-    addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(91, 100)), module, NamPlayer::AUDIO_OUTPUT));
-
-    // Lights (top center area)
-    addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(45, 20)), module, NamPlayer::MODEL_LIGHT));
-    addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(53, 20)), module, NamPlayer::SAMPLE_RATE_LIGHT));
-    addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(61, 20)), module, NamPlayer::GATE_LIGHT));
+    addInput(createInputCentered<PJ301MPort>(Vec(25, box.size.y - 40), module, NamPlayer::AUDIO_INPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(box.size.x - 25, box.size.y - 40), module, NamPlayer::AUDIO_OUTPUT));
 }
 
 void NamPlayerWidget::appendContextMenu(Menu* menu) {
@@ -293,6 +352,119 @@ void NamPlayerWidget::appendContextMenu(Menu* menu) {
         if (module->isSampleRateMismatched()) {
             menu->addChild(createMenuLabel("⚠ Sample rate mismatch (resampling active)"));
         }
+    }
+    
+    // Waveform color selection submenu
+    menu->addChild(new MenuSeparator());
+    menu->addChild(createSubmenuItem("Waveform Color", "", [=](Menu* submenu) {
+        const char* colorNames[] = {"Green", "Baby Blue", "Amber", "Red", "Purple", "White"};
+        
+        for (int i = 0; i < static_cast<int>(NamPlayer::WaveformColor::NUM_COLORS); i++) {
+            auto color = static_cast<NamPlayer::WaveformColor>(i);
+            submenu->addChild(createMenuItem(colorNames[i], 
+                module->waveformColor == color ? "✓" : "",
+                [=]() {
+                    module->waveformColor = color;
+                }
+            ));
+        }
+    }));
+}
+
+// OutputDisplay implementation
+void OutputDisplay::draw(const DrawArgs& args) {
+    drawBackground(args);
+    drawWaveform(args);
+}
+
+void OutputDisplay::drawBackground(const DrawArgs& args) {
+    // Dark background
+    nvgBeginPath(args.vg);
+    nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+    nvgFillColor(args.vg, nvgRGB(15, 15, 20));
+    nvgFill(args.vg);
+    
+    // Subtle border
+    nvgStrokeColor(args.vg, nvgRGB(50, 50, 60));
+    nvgStrokeWidth(args.vg, 1.0f);
+    nvgStroke(args.vg);
+    
+    // Center line
+    float centerY = box.size.y * 0.5f;
+    nvgBeginPath(args.vg);
+    nvgMoveTo(args.vg, 0, centerY);
+    nvgLineTo(args.vg, box.size.x, centerY);
+    nvgStrokeColor(args.vg, nvgRGBA(60, 60, 70, 100));
+    nvgStrokeWidth(args.vg, 0.5f);
+    nvgStroke(args.vg);
+}
+
+void OutputDisplay::drawWaveform(const DrawArgs& args) {
+    if (!module)
+        return;
+    
+    float centerY = box.size.y * 0.5f;
+    float maxBarHeight = box.size.y * 0.60f;
+    
+    // Bar settings
+    const float barSpacing = kBarWidth + kBarGap;
+    int numBars = static_cast<int>(box.size.x / barSpacing);
+    if (numBars <= 0) return;
+    
+    // Calculate samples per bar
+    int samplesPerBar = NamPlayer::DISPLAY_BUFFER_SIZE / numBars;
+    if (samplesPerBar < 1) samplesPerBar = 1;
+    
+    // Get display buffer read position (oldest sample)
+    int readPos = (module->displayBufferPos + 1) % NamPlayer::DISPLAY_BUFFER_SIZE;
+    
+    // Draw each bar
+    for (int barIdx = 0; barIdx < numBars; barIdx++) {
+        float x = barIdx * barSpacing;
+        
+        // Calculate peak for this bar
+        float peak = 0.0f;
+        for (int i = 0; i < samplesPerBar; i++) {
+            int sampleIdx = (readPos + barIdx * samplesPerBar + i) % NamPlayer::DISPLAY_BUFFER_SIZE;
+            float sample = std::fabs(module->displayBuffer[sampleIdx]);
+            peak = std::max(peak, sample);
+        }
+        
+        // Apply logarithmic scaling for better visual distribution
+        float barHeight = std::pow(peak, 0.6f) * maxBarHeight;
+        barHeight = std::max(barHeight, 1.0f);  // Minimum bar height
+        
+        // Get user-selected color
+        int r, g, b;
+        module->getWaveformColorRGB(r, g, b);
+        
+        // Apply brightness based on peak level
+        float brightness = 0.5f + peak * 0.5f;  // 50-100% brightness
+        int r1 = static_cast<int>(r * brightness);
+        int g1 = static_cast<int>(g * brightness);
+        int b1 = static_cast<int>(b * brightness);
+        int r2 = static_cast<int>(r * brightness * 0.6f);  // Darker for gradient
+        int g2 = static_cast<int>(g * brightness * 0.6f);
+        int b2 = static_cast<int>(b * brightness * 0.6f);
+        
+        // Create gradient from lighter at center to darker at edges
+        NVGpaint gradient = nvgLinearGradient(args.vg,
+            x, centerY - barHeight,
+            x, centerY + barHeight,
+            nvgRGBA(r1, g1, b1, 220),
+            nvgRGBA(r2, g2, b2, 180));
+        
+        // Draw top bar (positive amplitude)
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, x, centerY - barHeight, kBarWidth, barHeight, 0.5f);
+        nvgFillPaint(args.vg, gradient);
+        nvgFill(args.vg);
+        
+        // Draw bottom bar (mirrored)
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, x, centerY, kBarWidth, barHeight, 0.5f);
+        nvgFillPaint(args.vg, gradient);
+        nvgFill(args.vg);
     }
 }
 
