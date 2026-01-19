@@ -23,6 +23,9 @@ jobs:
           - os: macos-14
             platform_name: mac-arm64
             sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-mac-arm64.zip
+          - os: macos-13
+            platform_name: mac-x64
+            sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-mac-x64.zip
 
     defaults:
       run:
