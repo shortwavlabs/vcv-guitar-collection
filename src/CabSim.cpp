@@ -417,36 +417,35 @@ void CabSim::dataFromJson(json_t* rootJ) {
 // Widget implementation
 CabSimWidget::CabSimWidget(CabSim* module) {
     setModule(module);
-    setPanel(createPanel(asset::plugin(pluginInstance, "res/CabSim.svg")));
+    setPanel(createPanel(asset::plugin(pluginInstance, "res/CABSIM_PANEL.svg")));
 
-    // Module is 12HP = 60.96mm wide
-    // Center X = 30.48mm
+    // Module is 8HP = 120px
+    // Center X = 60
+    float centerX = box.size.x / 2.0f;
     
     // Screws (4 corners)
-    addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-    addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+    addChild(createWidget<ScrewSilver>(Vec(0, 0)));
+    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
     // Blend knob (large, centered at top)
-    addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(30.48, 30)), module, CabSim::BLEND_PARAM));
-    
-    // Filter knobs (medium, side by side)
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15, 55)), module, CabSim::HIGHPASS_PARAM));
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(45, 55)), module, CabSim::LOWPASS_PARAM));
-    
-    // Output knob (medium, centered)
-    addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30.48, 80)), module, CabSim::OUTPUT_PARAM));
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(centerX, 50), module, CabSim::BLEND_PARAM));
 
-    // Input jack (left side, bottom)
-    addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15, 105)), module, CabSim::AUDIO_INPUT));
-    
-    // Output jack (right side, bottom)
-    addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(45, 105)), module, CabSim::AUDIO_OUTPUT));
+    // Filter knobs (medium, side by side)
+    addParam(createParamCentered<RoundBlackKnob>(Vec(25, 135), module, CabSim::HIGHPASS_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(box.size.x - 25, 135), module, CabSim::LOWPASS_PARAM));
+
+    // Output knob (medium, centered)
+    addParam(createParamCentered<RoundLargeBlackKnob>(Vec(centerX, 195), module, CabSim::OUTPUT_PARAM));
 
     // IR Lights (above the I/O jacks)
-    addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(15, 95)), module, CabSim::IR_A_LIGHT));
-    addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(45, 95)), module, CabSim::IR_B_LIGHT));
+    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(35, 260), module, CabSim::IR_A_LIGHT));
+    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(box.size.x - 35, 260), module, CabSim::IR_B_LIGHT));
+
+    // Input jack (left side, bottom)
+    addInput(createInputCentered<PJ301MPort>(Vec(25, box.size.y - 40), module, CabSim::AUDIO_INPUT));
+
+    // Output jack (right side, bottom)
+    addOutput(createOutputCentered<PJ301MPort>(Vec(box.size.x - 25, box.size.y - 40), module, CabSim::AUDIO_OUTPUT));
 }
 
 void CabSimWidget::appendContextMenu(Menu* menu) {

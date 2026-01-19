@@ -215,15 +215,13 @@ void NamPlayer::dataFromJson(json_t* rootJ) {
 // Widget implementation
 NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     setModule(module);
-    setPanel(createPanel(asset::plugin(pluginInstance, "res/NamPlayer.svg")));
+    setPanel(createPanel(asset::plugin(pluginInstance, "res/SWV_21HP_PANEL.svg")));
 
     // Module is 21HP = 106.68mm wide
     
-    // Screws (4 corners)
-    addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-    addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+    // Screws
+    addChild(createWidget<ScrewSilver>(Vec(0, 0)));
+    addChild(createWidget<ScrewSilver>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
     // Input/Output gain knobs (large, top section)
     addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15, 30)), module, NamPlayer::INPUT_PARAM));
