@@ -175,9 +175,6 @@ public:
      * @return Processed output sample
      */
     float process(float input, float blend, float lowpassFreq, float highpassFreq) {
-        // Update filter coefficients if changed
-        updateFilters(lowpassFreq, highpassFreq);
-        
         // Accumulate into input buffer
         inputBuffer[bufferPos] = input;
         
@@ -197,6 +194,13 @@ public:
         output = lpf.process(output);
         
         return output;
+    }
+
+    /**
+     * Update filter frequencies when parameters change
+     */
+    void setFilterFrequencies(float lowpassFreq, float highpassFreq) {
+        updateFilters(lowpassFreq, highpassFreq);
     }
     
     /**

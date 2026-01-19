@@ -24,6 +24,10 @@ else
     EXTRA_FLAGS := -std=c++17
 endif
 
+# Enable Link Time Optimization for performance
+FLAGS += -flto
+LDFLAGS += -flto
+
 # Careful about linking to shared libraries, since you can't assume much about the user's environment and library search path.
 # Static libraries are fine, but they should be added to this plugin's build system.
 LDFLAGS +=

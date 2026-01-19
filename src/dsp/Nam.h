@@ -256,7 +256,7 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     
     static constexpr int MAX_BLOCK_SIZE = 2048;
-    static constexpr int MAX_RESAMPLE_RATIO = 8;  // Support up to 8x resampling
+    static constexpr int MAX_RESAMPLE_RATIO = 4;  // Support up to 4x resampling
     
     NamDSP() {
         // Pre-allocate buffers
@@ -264,10 +264,11 @@ public:
         resampleOutBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.f);
         modelInputBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.0);
         modelOutputBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.0);
+        gatedInputBuffer.resize(MAX_BLOCK_SIZE, 0.f);
         
         // Initialize resamplers with quality setting
-        srcIn.setQuality(6);  // Good quality (0-10 scale)
-        srcOut.setQuality(6);
+        srcIn.setQuality(4);  // Better performance (0-10 scale)
+        srcOut.setQuality(4);
     }
     
     ~NamDSP() = default;
@@ -348,9 +349,11 @@ public:
         }
         
         // Apply noise gate to input
-        std::vector<float> gatedInput(numFrames);
+        if (numFrames > static_cast<int>(gatedInputBuffer.size())) {
+            gatedInputBuffer.resize(numFrames, 0.f);
+        }
         for (int i = 0; i < numFrames; i++) {
-            gatedInput[i] = noiseGate.process(input[i]);
+            gatedInputBuffer[i] = noiseGate.process(input[i]);
         }
         
         // Check if resampling is needed
@@ -359,7 +362,7 @@ public:
         if (std::abs(ratio - 1.0) < 0.001) {
             // No resampling needed - direct processing
             for (int i = 0; i < numFrames; i++) {
-                modelInputBuffer[i] = static_cast<double>(gatedInput[i]);
+                modelInputBuffer[i] = static_cast<double>(gatedInputBuffer[i]);
             }
             model->process(modelInputBuffer.data(), modelOutputBuffer.data(), numFrames);
             for (int i = 0; i < numFrames; i++) {
@@ -373,7 +376,7 @@ public:
             // Upsample input to model rate
             int inFrames = numFrames;
             int outFrames = maxResampledFrames;
-            srcIn.process(gatedInput.data(), 1, &inFrames, resampleInBuffer.data(), 1, &outFrames);
+            srcIn.process(gatedInputBuffer.data(), 1, &inFrames, resampleInBuffer.data(), 1, &outFrames);
             
             int processedFrames = outFrames;
             
@@ -447,6 +450,7 @@ private:
     std::vector<float> resampleOutBuffer;
     std::vector<double> modelInputBuffer;
     std::vector<double> modelOutputBuffer;
+    std::vector<float> gatedInputBuffer;
     
     void updateResamplerRates() {
         // srcIn: engine rate -> model rate (upsample if model rate > engine rate)

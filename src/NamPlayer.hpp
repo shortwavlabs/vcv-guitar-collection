@@ -6,7 +6,6 @@
 #include <memory>
 #include <atomic>
 #include <thread>
-#include <mutex>
 
 struct NamPlayer : Module {
     enum ParamId {
@@ -45,7 +44,9 @@ struct NamPlayer : Module {
     
     // NAM DSP wrapper (handles resampling and tone stack internally)
     std::unique_ptr<NamDSP> namDsp;
-    std::mutex dspMutex;
+    std::unique_ptr<NamDSP> pendingDsp;
+    std::atomic<bool> hasPendingDsp{false};
+    std::atomic<bool> hasPendingUnload{false};
     
     // Async loading
     std::thread loadThread;
@@ -58,7 +59,9 @@ struct NamPlayer : Module {
     int bufferPos = 0;
     
     // Sample rate
-    double currentSampleRate = 48000.0;
+    std::atomic<double> currentSampleRate{48000.0};
+    std::atomic<double> pendingSampleRate{48000.0};
+    std::atomic<bool> hasPendingSampleRate{false};
     
     NamPlayer();
     ~NamPlayer();

@@ -44,6 +44,23 @@ NamPlayer::~NamPlayer() {
 }
 
 void NamPlayer::process(const ProcessArgs& args) {
+    if (hasPendingDsp.exchange(false, std::memory_order_acq_rel)) {
+        namDsp = std::move(pendingDsp);
+    }
+    if (hasPendingUnload.exchange(false, std::memory_order_acq_rel)) {
+        if (namDsp) {
+            namDsp->unloadModel();
+        }
+    }
+    if (hasPendingSampleRate.exchange(false, std::memory_order_acq_rel)) {
+        double newRate = pendingSampleRate.load(std::memory_order_acquire);
+        if (namDsp) {
+            namDsp->setSampleRate(newRate);
+        }
+        if (pendingDsp) {
+            pendingDsp->setSampleRate(newRate);
+        }
+    }
     // Get input with gain (line-level normalization: ±5V -> ±1.0)
     float inputGain = params[INPUT_PARAM].getValue();
     float input = inputs[AUDIO_INPUT].getVoltage() / 5.f * inputGain;
@@ -99,7 +116,6 @@ void NamPlayer::process(const ProcessArgs& args) {
     
     // Process when buffer is full
     if (bufferPos >= BLOCK_SIZE) {
-        std::lock_guard<std::mutex> lock(dspMutex);
         if (namDsp && namDsp->isModelLoaded()) {
             namDsp->process(inputBuffer.data(), outputBuffer.data(), BLOCK_SIZE);
         }
@@ -112,12 +128,9 @@ void NamPlayer::process(const ProcessArgs& args) {
 }
 
 void NamPlayer::onSampleRateChange(const SampleRateChangeEvent& e) {
-    currentSampleRate = e.sampleRate;
-    
-    std::lock_guard<std::mutex> lock(dspMutex);
-    if (namDsp) {
-        namDsp->setSampleRate(currentSampleRate);
-    }
+    currentSampleRate.store(e.sampleRate, std::memory_order_release);
+    pendingSampleRate.store(e.sampleRate, std::memory_order_release);
+    hasPendingSampleRate.store(true, std::memory_order_release);
 }
 
 void NamPlayer::loadModel(const std::string& path) {
@@ -140,13 +153,11 @@ void NamPlayer::loadModel(const std::string& path) {
             
             if (newDsp->loadModel(path)) {
                 // Initialize with current sample rate
-                newDsp->setSampleRate(currentSampleRate);
+                newDsp->setSampleRate(currentSampleRate.load(std::memory_order_acquire));
                 
                 // Swap DSP
-                {
-                    std::lock_guard<std::mutex> lock(dspMutex);
-                    namDsp = std::move(newDsp);
-                }
+                pendingDsp = std::move(newDsp);
+                hasPendingDsp.store(true, std::memory_order_release);
                 
                 loadSuccess = true;
             }
@@ -160,10 +171,7 @@ void NamPlayer::loadModel(const std::string& path) {
 }
 
 void NamPlayer::unloadModel() {
-    std::lock_guard<std::mutex> lock(dspMutex);
-    if (namDsp) {
-        namDsp->unloadModel();
-    }
+    hasPendingUnload.store(true, std::memory_order_release);
 }
 
 std::string NamPlayer::getModelPath() const {
