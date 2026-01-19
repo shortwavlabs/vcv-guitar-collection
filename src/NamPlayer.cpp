@@ -288,6 +288,12 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 25, gateY), module, NamPlayer::GATE_RELEASE_PARAM));
     addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 75, gateY), module, NamPlayer::GATE_HOLD_PARAM));
 
+    // Lights
+    float lightY = 300;
+    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(centerX - 15, lightY), module, NamPlayer::MODEL_LIGHT));
+    addChild(createLightCentered<SmallLight<YellowLight>>(Vec(centerX, lightY), module, NamPlayer::SAMPLE_RATE_LIGHT));
+    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(centerX + 15, lightY), module, NamPlayer::GATE_LIGHT));
+
     // Input/Output gain knobs (large, top section)
     addParam(createParamCentered<RoundBlackKnob>(Vec(25, box.size.y - 75), module, NamPlayer::INPUT_PARAM));
     addParam(createParamCentered<RoundBlackKnob>(Vec(box.size.x - 25, box.size.y - 75), module, NamPlayer::OUTPUT_PARAM));
@@ -295,11 +301,6 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     // Mono inputs/outputs (bottom)
     addInput(createInputCentered<PJ301MPort>(Vec(25, box.size.y - 40), module, NamPlayer::AUDIO_INPUT));
     addOutput(createOutputCentered<PJ301MPort>(Vec(box.size.x - 25, box.size.y - 40), module, NamPlayer::AUDIO_OUTPUT));
-
-    // Lights (top center area)
-    // addChild(createLightCentered<MediumLight<GreenLight>>(Vec(45, 20), module, NamPlayer::MODEL_LIGHT));
-    // addChild(createLightCentered<SmallLight<YellowLight>>(Vec(53, 20), module, NamPlayer::SAMPLE_RATE_LIGHT));
-    // addChild(createLightCentered<SmallLight<GreenLight>>(Vec(61, 20), module, NamPlayer::GATE_LIGHT));
 }
 
 void NamPlayerWidget::appendContextMenu(Menu* menu) {
