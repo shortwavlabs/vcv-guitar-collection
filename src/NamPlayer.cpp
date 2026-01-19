@@ -256,9 +256,11 @@ void NamPlayer::dataFromJson(json_t* rootJ) {
 // Widget implementation
 NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     setModule(module);
-    setPanel(createPanel(asset::plugin(pluginInstance, "res/SWV_18HP_PANEL.svg")));
+    setPanel(createPanel(asset::plugin(pluginInstance, "res/NAM_PANEL.svg")));
 
-    // Module is 21HP = 106.68mm wide
+    // Module is 18HP = 270px
+    // Center X = 135
+    const float centerX = box.size.x / 2.f;
     
     // Screws
     addChild(createWidget<ScrewSilver>(Vec(0, 0)));
@@ -271,26 +273,28 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     display->box.size = Vec(box.size.x, 70);
     addChild(display);
 
+    // Tone Stack knobs (small, top row - 5 knobs)
+    float toneY = 140;
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 100, toneY), module, NamPlayer::BASS_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 50, toneY), module, NamPlayer::MIDDLE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX, toneY), module, NamPlayer::TREBLE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 50, toneY), module, NamPlayer::PRESENCE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 100, toneY), module, NamPlayer::DEPTH_PARAM));
+
+    // Noise Gate knobs (small, middle row)
+    float gateY = 225;
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 75, gateY), module, NamPlayer::GATE_THRESHOLD_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 25, gateY), module, NamPlayer::GATE_ATTACK_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 25, gateY), module, NamPlayer::GATE_RELEASE_PARAM));
+    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 75, gateY), module, NamPlayer::GATE_HOLD_PARAM));
+
     // Input/Output gain knobs (large, top section)
-    // addParam(createParamCentered<RoundBlackKnob>(Vec(15, 30), module, NamPlayer::INPUT_PARAM));
-    // addParam(createParamCentered<RoundBlackKnob>(Vec(91, 30), module, NamPlayer::OUTPUT_PARAM));
-
-    // Noise Gate knobs (small, second row)
-    // addParam(createParamCentered<RoundSmallBlackKnob>(Vec(15, 50), module, NamPlayer::GATE_THRESHOLD_PARAM));
-    // addParam(createParamCentered<RoundSmallBlackKnob>(Vec(34, 50), module, NamPlayer::GATE_ATTACK_PARAM));
-    // addParam(createParamCentered<RoundSmallBlackKnob>(Vec(53, 50), module, NamPlayer::GATE_RELEASE_PARAM));
-    // addParam(createParamCentered<RoundSmallBlackKnob>(Vec(72, 50), module, NamPlayer::GATE_HOLD_PARAM));
-
-    // Tone Stack knobs (small, third row - 5 knobs)
-    // addParam(createParamCentered<RoundSmallBlackKnob>(Vec(15, 70), module, NamPlayer::BASS_PARAM));
-    // addParam(createParamCentered<RoundSmallBlackKnob>(Vec(34, 70), module, NamPlayer::MIDDLE_PARAM));
-    // addParam(createParamCentered<RoundSmallBlackKnob>(Vec(53, 70), module, NamPlayer::TREBLE_PARAM));
-    // addParam(createParamCentered<RoundSmallBlackKnob>(Vec(72, 70), module, NamPlayer::PRESENCE_PARAM));
-    // addParam(createParamCentered<RoundSmallBlackKnob>(Vec(91, 70), module, NamPlayer::DEPTH_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(25, box.size.y - 75), module, NamPlayer::INPUT_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(box.size.x - 25, box.size.y - 75), module, NamPlayer::OUTPUT_PARAM));
 
     // Mono inputs/outputs (bottom)
-    addInput(createInputCentered<PJ301MPort>(Vec(15, 100), module, NamPlayer::AUDIO_INPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(91, 100), module, NamPlayer::AUDIO_OUTPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(25, box.size.y - 40), module, NamPlayer::AUDIO_INPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(box.size.x - 25, box.size.y - 40), module, NamPlayer::AUDIO_OUTPUT));
 
     // Lights (top center area)
     // addChild(createLightCentered<MediumLight<GreenLight>>(Vec(45, 20), module, NamPlayer::MODEL_LIGHT));
