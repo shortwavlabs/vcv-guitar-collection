@@ -201,10 +201,37 @@ bool NamPlayer::isSampleRateMismatched() const {
     return false;
 }
 
+void NamPlayer::getWaveformColorRGB(int& r, int& g, int& b) const {
+    switch (waveformColor) {
+        case WaveformColor::Green:
+            r = 100; g = 255; b = 100;
+            break;
+        case WaveformColor::BabyBlue:
+            r = 100; g = 200; b = 255;
+            break;
+        case WaveformColor::Amber:
+            r = 255; g = 180; b = 50;
+            break;
+        case WaveformColor::Red:
+            r = 255; g = 80; b = 80;
+            break;
+        case WaveformColor::Purple:
+            r = 200; g = 100; b = 255;
+            break;
+        case WaveformColor::White:
+            r = 255; g = 255; b = 255;
+            break;
+        default:
+            r = 100; g = 255; b = 100; // Default to Green
+            break;
+    }
+}
+
 json_t* NamPlayer::dataToJson() {
     json_t* rootJ = json_object();
     std::string path = getModelPath();
     json_object_set_new(rootJ, "modelPath", json_string(path.c_str()));
+    json_object_set_new(rootJ, "waveformColor", json_integer(static_cast<int>(waveformColor)));
     return rootJ;
 }
 
@@ -214,6 +241,14 @@ void NamPlayer::dataFromJson(json_t* rootJ) {
         std::string path = json_string_value(pathJ);
         if (!path.empty()) {
             loadModel(path);
+        }
+    }
+    
+    json_t* colorJ = json_object_get(rootJ, "waveformColor");
+    if (colorJ) {
+        int colorInt = json_integer_value(colorJ);
+        if (colorInt >= 0 && colorInt < static_cast<int>(WaveformColor::NUM_COLORS)) {
+            waveformColor = static_cast<WaveformColor>(colorInt);
         }
     }
 }
@@ -313,6 +348,22 @@ void NamPlayerWidget::appendContextMenu(Menu* menu) {
             menu->addChild(createMenuLabel("⚠ Sample rate mismatch (resampling active)"));
         }
     }
+    
+    // Waveform color selection submenu
+    menu->addChild(new MenuSeparator());
+    menu->addChild(createSubmenuItem("Waveform Color", "", [=](Menu* submenu) {
+        const char* colorNames[] = {"Green", "Baby Blue", "Amber", "Red", "Purple", "White"};
+        
+        for (int i = 0; i < static_cast<int>(NamPlayer::WaveformColor::NUM_COLORS); i++) {
+            auto color = static_cast<NamPlayer::WaveformColor>(i);
+            submenu->addChild(createMenuItem(colorNames[i], 
+                module->waveformColor == color ? "✓" : "",
+                [=]() {
+                    module->waveformColor = color;
+                }
+            ));
+        }
+    }));
 }
 
 // OutputDisplay implementation
@@ -378,28 +429,25 @@ void OutputDisplay::drawWaveform(const DrawArgs& args) {
         float barHeight = std::pow(peak, 0.6f) * maxBarHeight;
         barHeight = std::max(barHeight, 1.0f);  // Minimum bar height
         
-        // Color gradient based on level (green -> yellow -> red)
+        // Get user-selected color
         int r, g, b;
-        if (peak < 0.5f) {
-            // Green to yellow
-            float t = peak * 2.0f;
-            r = static_cast<int>(100 + 155 * t);
-            g = static_cast<int>(200);
-            b = static_cast<int>(100 * (1.0f - t));
-        } else {
-            // Yellow to red
-            float t = (peak - 0.5f) * 2.0f;
-            r = 255;
-            g = static_cast<int>(200 * (1.0f - t * 0.5f));
-            b = static_cast<int>(50 * (1.0f - t));
-        }
+        module->getWaveformColorRGB(r, g, b);
+        
+        // Apply brightness based on peak level
+        float brightness = 0.5f + peak * 0.5f;  // 50-100% brightness
+        int r1 = static_cast<int>(r * brightness);
+        int g1 = static_cast<int>(g * brightness);
+        int b1 = static_cast<int>(b * brightness);
+        int r2 = static_cast<int>(r * brightness * 0.6f);  // Darker for gradient
+        int g2 = static_cast<int>(g * brightness * 0.6f);
+        int b2 = static_cast<int>(b * brightness * 0.6f);
         
         // Create gradient from lighter at center to darker at edges
         NVGpaint gradient = nvgLinearGradient(args.vg,
             x, centerY - barHeight,
             x, centerY + barHeight,
-            nvgRGBA(r, g, b, 220),
-            nvgRGBA(r * 0.6f, g * 0.6f, b * 0.6f, 180));
+            nvgRGBA(r1, g1, b1, 220),
+            nvgRGBA(r2, g2, b2, 180));
         
         // Draw top bar (positive amplitude)
         nvgBeginPath(args.vg);

@@ -11,6 +11,17 @@
 struct OutputDisplay;
 
 struct NamPlayer : Module {
+    // Waveform color presets
+    enum class WaveformColor {
+        Green = 0,
+        BabyBlue,
+        Amber,
+        Red,
+        Purple,
+        White,
+        NUM_COLORS
+    };
+    
     enum ParamId {
         INPUT_PARAM,
         OUTPUT_PARAM,
@@ -71,6 +82,9 @@ struct NamPlayer : Module {
     std::atomic<double> pendingSampleRate{48000.0};
     std::atomic<bool> hasPendingSampleRate{false};
     
+    // Waveform display settings
+    WaveformColor waveformColor = WaveformColor::Green;
+    
     NamPlayer();
     ~NamPlayer();
     
@@ -82,6 +96,9 @@ struct NamPlayer : Module {
     std::string getModelPath() const;
     std::string getModelName() const;
     bool isSampleRateMismatched() const;
+    
+    // Get RGB values for current waveform color (0-255 range)
+    void getWaveformColorRGB(int& r, int& g, int& b) const;
     
     json_t* dataToJson() override;
     void dataFromJson(json_t* rootJ) override;
