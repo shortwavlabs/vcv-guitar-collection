@@ -404,7 +404,7 @@ void OutputDisplay::drawWaveform(const DrawArgs& args) {
         return;
     
     float centerY = box.size.y * 0.5f;
-    float maxBarHeight = box.size.y * 0.60f;
+    float maxBarHeight = box.size.y * 0.40f;
     
     // Bar settings
     const float barSpacing = kBarWidth + kBarGap;
@@ -433,6 +433,7 @@ void OutputDisplay::drawWaveform(const DrawArgs& args) {
         // Apply logarithmic scaling for better visual distribution
         float barHeight = std::pow(peak, 0.6f) * maxBarHeight;
         barHeight = std::max(barHeight, 1.0f);  // Minimum bar height
+        barHeight = std::min(barHeight, maxBarHeight);  // Clamp to bounds
         
         // Get user-selected color
         int r, g, b;
