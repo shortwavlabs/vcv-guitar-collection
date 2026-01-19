@@ -31,6 +31,7 @@ NamPlayer::NamPlayer() {
     // Pre-allocate buffers
     inputBuffer.resize(BLOCK_SIZE, 0.f);
     outputBuffer.resize(BLOCK_SIZE, 0.f);
+    displayBuffer.resize(DISPLAY_BUFFER_SIZE, 0.f);
     
     // Enable fast tanh for better performance
     nam::activations::Activation::enable_fast_tanh();
@@ -124,7 +125,12 @@ void NamPlayer::process(const ProcessArgs& args) {
     
     // Apply output gain and send (scale back to ±5V)
     float outputGain = params[OUTPUT_PARAM].getValue();
-    outputs[AUDIO_OUTPUT].setVoltage(output * outputGain * 5.f);
+    float finalOutput = output * outputGain;
+    outputs[AUDIO_OUTPUT].setVoltage(finalOutput * 5.f);
+    
+    // Update display buffer with output sample (normalized to ±1)
+    displayBuffer[displayBufferPos] = finalOutput;
+    displayBufferPos = (displayBufferPos + 1) % DISPLAY_BUFFER_SIZE;
 }
 
 void NamPlayer::onSampleRateChange(const SampleRateChangeEvent& e) {
@@ -248,6 +254,13 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(45, 20)), module, NamPlayer::MODEL_LIGHT));
     addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(53, 20)), module, NamPlayer::SAMPLE_RATE_LIGHT));
     addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(61, 20)), module, NamPlayer::GATE_LIGHT));
+    
+    // Output waveform display (below tone stack, above I/O)
+    OutputDisplay* display = new OutputDisplay();
+    display->module = module;
+    display->box.pos = mm2px(Vec(2, 82));
+    display->box.size = mm2px(Vec(102.68, 12));
+    addChild(display);
 }
 
 void NamPlayerWidget::appendContextMenu(Menu* menu) {
@@ -299,6 +312,106 @@ void NamPlayerWidget::appendContextMenu(Menu* menu) {
         if (module->isSampleRateMismatched()) {
             menu->addChild(createMenuLabel("⚠ Sample rate mismatch (resampling active)"));
         }
+    }
+}
+
+// OutputDisplay implementation
+void OutputDisplay::draw(const DrawArgs& args) {
+    drawBackground(args);
+    drawWaveform(args);
+}
+
+void OutputDisplay::drawBackground(const DrawArgs& args) {
+    // Dark background
+    nvgBeginPath(args.vg);
+    nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+    nvgFillColor(args.vg, nvgRGB(15, 15, 20));
+    nvgFill(args.vg);
+    
+    // Subtle border
+    nvgStrokeColor(args.vg, nvgRGB(50, 50, 60));
+    nvgStrokeWidth(args.vg, 1.0f);
+    nvgStroke(args.vg);
+    
+    // Center line
+    float centerY = box.size.y * 0.5f;
+    nvgBeginPath(args.vg);
+    nvgMoveTo(args.vg, 0, centerY);
+    nvgLineTo(args.vg, box.size.x, centerY);
+    nvgStrokeColor(args.vg, nvgRGBA(60, 60, 70, 100));
+    nvgStrokeWidth(args.vg, 0.5f);
+    nvgStroke(args.vg);
+}
+
+void OutputDisplay::drawWaveform(const DrawArgs& args) {
+    if (!module)
+        return;
+    
+    float centerY = box.size.y * 0.5f;
+    float maxBarHeight = box.size.y * 0.45f;
+    
+    // Bar settings
+    const float barSpacing = kBarWidth + kBarGap;
+    int numBars = static_cast<int>(box.size.x / barSpacing);
+    if (numBars <= 0) return;
+    
+    // Calculate samples per bar
+    int samplesPerBar = NamPlayer::DISPLAY_BUFFER_SIZE / numBars;
+    if (samplesPerBar < 1) samplesPerBar = 1;
+    
+    // Get display buffer read position (oldest sample)
+    int readPos = (module->displayBufferPos + 1) % NamPlayer::DISPLAY_BUFFER_SIZE;
+    
+    // Draw each bar
+    for (int barIdx = 0; barIdx < numBars; barIdx++) {
+        float x = barIdx * barSpacing;
+        
+        // Calculate peak for this bar
+        float peak = 0.0f;
+        for (int i = 0; i < samplesPerBar; i++) {
+            int sampleIdx = (readPos + barIdx * samplesPerBar + i) % NamPlayer::DISPLAY_BUFFER_SIZE;
+            float sample = std::fabs(module->displayBuffer[sampleIdx]);
+            peak = std::max(peak, sample);
+        }
+        
+        // Apply logarithmic scaling for better visual distribution
+        float barHeight = std::pow(peak, 0.6f) * maxBarHeight;
+        barHeight = std::max(barHeight, 1.0f);  // Minimum bar height
+        
+        // Color gradient based on level (green -> yellow -> red)
+        int r, g, b;
+        if (peak < 0.5f) {
+            // Green to yellow
+            float t = peak * 2.0f;
+            r = static_cast<int>(100 + 155 * t);
+            g = static_cast<int>(200);
+            b = static_cast<int>(100 * (1.0f - t));
+        } else {
+            // Yellow to red
+            float t = (peak - 0.5f) * 2.0f;
+            r = 255;
+            g = static_cast<int>(200 * (1.0f - t * 0.5f));
+            b = static_cast<int>(50 * (1.0f - t));
+        }
+        
+        // Create gradient from lighter at center to darker at edges
+        NVGpaint gradient = nvgLinearGradient(args.vg,
+            x, centerY - barHeight,
+            x, centerY + barHeight,
+            nvgRGBA(r, g, b, 220),
+            nvgRGBA(r * 0.6f, g * 0.6f, b * 0.6f, 180));
+        
+        // Draw top bar (positive amplitude)
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, x, centerY - barHeight, kBarWidth, barHeight, 0.5f);
+        nvgFillPaint(args.vg, gradient);
+        nvgFill(args.vg);
+        
+        // Draw bottom bar (mirrored)
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, x, centerY, kBarWidth, barHeight, 0.5f);
+        nvgFillPaint(args.vg, gradient);
+        nvgFill(args.vg);
     }
 }
 

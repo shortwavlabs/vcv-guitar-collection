@@ -7,6 +7,9 @@
 #include <atomic>
 #include <thread>
 
+// Forward declaration for UI component
+struct OutputDisplay;
+
 struct NamPlayer : Module {
     enum ParamId {
         INPUT_PARAM,
@@ -41,6 +44,7 @@ struct NamPlayer : Module {
 
     // Constants
     static constexpr int BLOCK_SIZE = 128;
+    static constexpr int DISPLAY_BUFFER_SIZE = 512;  // Ring buffer for display
     
     // NAM DSP wrapper (handles resampling and tone stack internally)
     std::unique_ptr<NamDSP> namDsp;
@@ -57,6 +61,10 @@ struct NamPlayer : Module {
     std::vector<float> inputBuffer;
     std::vector<float> outputBuffer;
     int bufferPos = 0;
+    
+    // Display buffer (ring buffer for visualization)
+    std::vector<float> displayBuffer;
+    int displayBufferPos = 0;
     
     // Sample rate
     std::atomic<double> currentSampleRate{48000.0};
@@ -82,4 +90,17 @@ struct NamPlayer : Module {
 struct NamPlayerWidget : ModuleWidget {
     NamPlayerWidget(NamPlayer* module);
     void appendContextMenu(Menu* menu) override;
+};
+
+// Output waveform display widget
+struct OutputDisplay : OpaqueWidget {
+    NamPlayer* module = nullptr;
+    
+    // Display settings
+    static constexpr float kBarWidth = 2.0f;
+    static constexpr float kBarGap = 1.0f;
+    
+    void draw(const DrawArgs& args) override;
+    void drawWaveform(const DrawArgs& args);
+    void drawBackground(const DrawArgs& args);
 };
