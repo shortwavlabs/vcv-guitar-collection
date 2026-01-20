@@ -40,6 +40,18 @@ struct NamPlayer : Module {
     };
     enum InputId {
         AUDIO_INPUT,  // Mono input
+        // CV inputs for all parameters
+        CV_INPUT_INPUT,
+        CV_INPUT_OUTPUT,
+        CV_GATE_THRESHOLD_INPUT,
+        CV_GATE_ATTACK_INPUT,
+        CV_GATE_RELEASE_INPUT,
+        CV_GATE_HOLD_INPUT,
+        CV_BASS_INPUT,
+        CV_MIDDLE_INPUT,
+        CV_TREBLE_INPUT,
+        CV_PRESENCE_INPUT,
+        CV_DEPTH_INPUT,
         INPUTS_LEN
     };
     enum OutputId {

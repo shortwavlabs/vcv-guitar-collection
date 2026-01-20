@@ -26,6 +26,12 @@ CabSim::CabSim() {
     configInput(AUDIO_INPUT, "Audio");
     configOutput(AUDIO_OUTPUT, "Audio");
     
+    // CV inputs
+    configInput(CV_BLEND_INPUT, "Blend CV");
+    configInput(CV_LOWPASS_INPUT, "Low-Pass Cutoff CV");
+    configInput(CV_HIGHPASS_INPUT, "High-Pass Cutoff CV");
+    configInput(CV_OUTPUT_INPUT, "Output Level CV");
+    
     // Bypass configuration
     configBypass(AUDIO_INPUT, AUDIO_OUTPUT);
     
@@ -67,16 +73,35 @@ void CabSim::process(const ProcessArgs& args) {
     // Get mono input (normalized to ±1.0)
     float input = inputs[AUDIO_INPUT].getVoltage() / 5.f;
     
-    // Get parameters
+    // Get parameters (with CV control)
     float blend = params[BLEND_PARAM].getValue();
+    if (inputs[CV_BLEND_INPUT].isConnected()) {
+        float cv = inputs[CV_BLEND_INPUT].getVoltage();
+        blend = rescale(cv, -5.f, 5.f, 0.f, 1.f);
+    }
     
-    // Convert log params to Hz
+    // Convert log params to Hz (with CV control)
     // LOWPASS: 1kHz to 20kHz -> param 0-1 maps to 1000 * 20^param
-    float lpFreq = 1000.f * std::pow(20.f, params[LOWPASS_PARAM].getValue());
-    // HIGHPASS: 20Hz to 2kHz -> param 0-1 maps to 20 * 100^param  
-    float hpFreq = 20.f * std::pow(100.f, params[HIGHPASS_PARAM].getValue());
+    float lpParam = params[LOWPASS_PARAM].getValue();
+    if (inputs[CV_LOWPASS_INPUT].isConnected()) {
+        float cv = inputs[CV_LOWPASS_INPUT].getVoltage();
+        lpParam = rescale(cv, -5.f, 5.f, 0.f, 1.f);
+    }
+    float lpFreq = 1000.f * std::pow(20.f, lpParam);
+    
+    // HIGHPASS: 20Hz to 2kHz -> param 0-1 maps to 20 * 100^param
+    float hpParam = params[HIGHPASS_PARAM].getValue();
+    if (inputs[CV_HIGHPASS_INPUT].isConnected()) {
+        float cv = inputs[CV_HIGHPASS_INPUT].getVoltage();
+        hpParam = rescale(cv, -5.f, 5.f, 0.f, 1.f);
+    }
+    float hpFreq = 20.f * std::pow(100.f, hpParam);
     
     float outputGain = params[OUTPUT_PARAM].getValue();
+    if (inputs[CV_OUTPUT_INPUT].isConnected()) {
+        float cv = inputs[CV_OUTPUT_INPUT].getVoltage();
+        outputGain = rescale(cv, -5.f, 5.f, 0.f, 2.f);
+    }
 
     // Update filter coefficients only when parameters change
     if (cabSimDsp) {
@@ -429,13 +454,23 @@ CabSimWidget::CabSimWidget(CabSim* module) {
 
     // Blend knob (large, centered at top)
     addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(centerX, 50), module, CabSim::BLEND_PARAM));
+    
+    // Blend CV input (below knob)
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX, 108), module, CabSim::CV_BLEND_INPUT));
 
     // Filter knobs (medium, side by side)
     addParam(createParamCentered<RoundBlackKnob>(Vec(25, 135), module, CabSim::HIGHPASS_PARAM));
     addParam(createParamCentered<RoundBlackKnob>(Vec(box.size.x - 25, 135), module, CabSim::LOWPASS_PARAM));
+    
+    // Filter CV inputs (below knobs)
+    addInput(createInputCentered<PJ301MPort>(Vec(25, 175), module, CabSim::CV_HIGHPASS_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(box.size.x - 25, 175), module, CabSim::CV_LOWPASS_INPUT));
 
     // Output knob (medium, centered)
     addParam(createParamCentered<RoundLargeBlackKnob>(Vec(centerX, 195), module, CabSim::OUTPUT_PARAM));
+    
+    // Output CV input (below knob)
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX, 242), module, CabSim::CV_OUTPUT_INPUT));
 
     // IR Lights (above the I/O jacks)
     addChild(createLightCentered<MediumLight<GreenLight>>(Vec(35, 260), module, CabSim::IR_A_LIGHT));

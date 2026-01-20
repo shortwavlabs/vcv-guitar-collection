@@ -25,6 +25,19 @@ NamPlayer::NamPlayer() {
     configInput(AUDIO_INPUT, "Audio");
     configOutput(AUDIO_OUTPUT, "Audio");
     
+    // CV inputs
+    configInput(CV_INPUT_INPUT, "Input Level CV");
+    configInput(CV_INPUT_OUTPUT, "Output Level CV");
+    configInput(CV_GATE_THRESHOLD_INPUT, "Gate Threshold CV");
+    configInput(CV_GATE_ATTACK_INPUT, "Gate Attack CV");
+    configInput(CV_GATE_RELEASE_INPUT, "Gate Release CV");
+    configInput(CV_GATE_HOLD_INPUT, "Gate Hold CV");
+    configInput(CV_BASS_INPUT, "Bass CV");
+    configInput(CV_MIDDLE_INPUT, "Middle CV");
+    configInput(CV_TREBLE_INPUT, "Treble CV");
+    configInput(CV_PRESENCE_INPUT, "Presence CV");
+    configInput(CV_DEPTH_INPUT, "Depth CV");
+    
     // Initialize DSP wrapper
     namDsp = std::make_unique<NamDSP>();
     
@@ -64,24 +77,78 @@ void NamPlayer::process(const ProcessArgs& args) {
     }
     // Get input with gain (line-level normalization: ±5V -> ±1.0)
     float inputGain = params[INPUT_PARAM].getValue();
+    if (inputs[CV_INPUT_INPUT].isConnected()) {
+        float cv = inputs[CV_INPUT_INPUT].getVoltage();
+        inputGain = rescale(cv, -5.f, 5.f, 0.f, 2.f);
+    }
     float input = inputs[AUDIO_INPUT].getVoltage() / 5.f * inputGain;
     
-    // Update noise gate parameters from knobs
+    // Update noise gate parameters from knobs (with CV)
     if (namDsp) {
         float threshold = params[GATE_THRESHOLD_PARAM].getValue();
+        if (inputs[CV_GATE_THRESHOLD_INPUT].isConnected()) {
+            float cv = inputs[CV_GATE_THRESHOLD_INPUT].getVoltage();
+            threshold = rescale(cv, -5.f, 5.f, -80.f, 0.f);
+        }
+        
         float attack = params[GATE_ATTACK_PARAM].getValue();
+        if (inputs[CV_GATE_ATTACK_INPUT].isConnected()) {
+            float cv = inputs[CV_GATE_ATTACK_INPUT].getVoltage();
+            attack = rescale(cv, -5.f, 5.f, 0.1f, 50.f);
+        }
+        
         float release = params[GATE_RELEASE_PARAM].getValue();
+        if (inputs[CV_GATE_RELEASE_INPUT].isConnected()) {
+            float cv = inputs[CV_GATE_RELEASE_INPUT].getVoltage();
+            release = rescale(cv, -5.f, 5.f, 10.f, 500.f);
+        }
+        
         float hold = params[GATE_HOLD_PARAM].getValue();
+        if (inputs[CV_GATE_HOLD_INPUT].isConnected()) {
+            float cv = inputs[CV_GATE_HOLD_INPUT].getVoltage();
+            hold = rescale(cv, -5.f, 5.f, 10.f, 500.f);
+        }
+        
         namDsp->setNoiseGate(threshold, attack, release, hold);
     }
     
-    // Update tone stack parameters from knobs (convert 0-1 to -12 to +12 dB)
+    // Update tone stack parameters from knobs (convert 0-1 to -12 to +12 dB, with CV)
     if (namDsp) {
-        float bass = (params[BASS_PARAM].getValue() - 0.5f) * 24.f;
-        float middle = (params[MIDDLE_PARAM].getValue() - 0.5f) * 24.f;
-        float treble = (params[TREBLE_PARAM].getValue() - 0.5f) * 24.f;
-        float presence = (params[PRESENCE_PARAM].getValue() - 0.5f) * 24.f;
-        float depth = (params[DEPTH_PARAM].getValue() - 0.5f) * 24.f;
+        float bass = params[BASS_PARAM].getValue();
+        if (inputs[CV_BASS_INPUT].isConnected()) {
+            float cv = inputs[CV_BASS_INPUT].getVoltage();
+            bass = rescale(cv, -5.f, 5.f, 0.f, 1.f);
+        }
+        bass = (bass - 0.5f) * 24.f;
+        
+        float middle = params[MIDDLE_PARAM].getValue();
+        if (inputs[CV_MIDDLE_INPUT].isConnected()) {
+            float cv = inputs[CV_MIDDLE_INPUT].getVoltage();
+            middle = rescale(cv, -5.f, 5.f, 0.f, 1.f);
+        }
+        middle = (middle - 0.5f) * 24.f;
+        
+        float treble = params[TREBLE_PARAM].getValue();
+        if (inputs[CV_TREBLE_INPUT].isConnected()) {
+            float cv = inputs[CV_TREBLE_INPUT].getVoltage();
+            treble = rescale(cv, -5.f, 5.f, 0.f, 1.f);
+        }
+        treble = (treble - 0.5f) * 24.f;
+        
+        float presence = params[PRESENCE_PARAM].getValue();
+        if (inputs[CV_PRESENCE_INPUT].isConnected()) {
+            float cv = inputs[CV_PRESENCE_INPUT].getVoltage();
+            presence = rescale(cv, -5.f, 5.f, 0.f, 1.f);
+        }
+        presence = (presence - 0.5f) * 24.f;
+        
+        float depth = params[DEPTH_PARAM].getValue();
+        if (inputs[CV_DEPTH_INPUT].isConnected()) {
+            float cv = inputs[CV_DEPTH_INPUT].getVoltage();
+            depth = rescale(cv, -5.f, 5.f, 0.f, 1.f);
+        }
+        depth = (depth - 0.5f) * 24.f;
+        
         namDsp->setToneStack(bass, middle, treble, presence, depth);
     }
     
@@ -125,6 +192,10 @@ void NamPlayer::process(const ProcessArgs& args) {
     
     // Apply output gain and send (scale back to ±5V)
     float outputGain = params[OUTPUT_PARAM].getValue();
+    if (inputs[CV_INPUT_OUTPUT].isConnected()) {
+        float cv = inputs[CV_INPUT_OUTPUT].getVoltage();
+        outputGain = rescale(cv, -5.f, 5.f, 0.f, 2.f);
+    }
     float finalOutput = output * outputGain;
     outputs[AUDIO_OUTPUT].setVoltage(finalOutput * 5.f);
     
@@ -280,6 +351,14 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     addParam(createParamCentered<RoundBlackKnob>(Vec(centerX, toneY), module, NamPlayer::TREBLE_PARAM));
     addParam(createParamCentered<RoundBlackKnob>(Vec(centerX + 50, toneY), module, NamPlayer::PRESENCE_PARAM));
     addParam(createParamCentered<RoundBlackKnob>(Vec(centerX + 100, toneY), module, NamPlayer::DEPTH_PARAM));
+    
+    // Tone Stack CV inputs (below knobs)
+    float toneCvY = 178;
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX - 100, toneCvY), module, NamPlayer::CV_BASS_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX - 50, toneCvY), module, NamPlayer::CV_MIDDLE_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX, toneCvY), module, NamPlayer::CV_TREBLE_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX + 50, toneCvY), module, NamPlayer::CV_PRESENCE_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX + 100, toneCvY), module, NamPlayer::CV_DEPTH_INPUT));
 
     // Noise Gate knobs (small, middle row)
     float gateY = 225;
@@ -287,6 +366,13 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     addParam(createParamCentered<RoundBlackKnob>(Vec(centerX - 25, gateY), module, NamPlayer::GATE_ATTACK_PARAM));
     addParam(createParamCentered<RoundBlackKnob>(Vec(centerX + 25, gateY), module, NamPlayer::GATE_RELEASE_PARAM));
     addParam(createParamCentered<RoundBlackKnob>(Vec(centerX + 75, gateY), module, NamPlayer::GATE_HOLD_PARAM));
+    
+    // Noise Gate CV inputs (below knobs)
+    float gateCvY = 263;
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX - 75, gateCvY), module, NamPlayer::CV_GATE_THRESHOLD_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX - 25, gateCvY), module, NamPlayer::CV_GATE_ATTACK_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX + 25, gateCvY), module, NamPlayer::CV_GATE_RELEASE_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX + 75, gateCvY), module, NamPlayer::CV_GATE_HOLD_INPUT));
 
     // Lights
     float lightY = 300;
@@ -297,6 +383,10 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     // Input/Output gain knobs (large, top section)
     addParam(createParamCentered<RoundBlackKnob>(Vec(25, box.size.y - 75), module, NamPlayer::INPUT_PARAM));
     addParam(createParamCentered<RoundBlackKnob>(Vec(box.size.x - 25, box.size.y - 75), module, NamPlayer::OUTPUT_PARAM));
+    
+    // Input/Output CV inputs (next to gain knobs)
+    addInput(createInputCentered<PJ301MPort>(Vec(55, box.size.y - 75), module, NamPlayer::CV_INPUT_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(box.size.x - 55, box.size.y - 75), module, NamPlayer::CV_INPUT_OUTPUT));
 
     // Mono inputs/outputs (bottom)
     addInput(createInputCentered<PJ301MPort>(Vec(25, box.size.y - 40), module, NamPlayer::AUDIO_INPUT));

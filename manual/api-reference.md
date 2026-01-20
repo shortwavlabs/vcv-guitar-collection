@@ -90,7 +90,19 @@ enum ParamId {
 
 ```cpp
 enum InputId {
-    AUDIO_INPUT,  // Mono audio input
+    AUDIO_INPUT,              // Mono audio input
+    // CV inputs for all parameters
+    CV_INPUT_INPUT,           // Input Level CV
+    CV_INPUT_OUTPUT,          // Output Level CV
+    CV_GATE_THRESHOLD_INPUT,  // Gate Threshold CV
+    CV_GATE_ATTACK_INPUT,     // Gate Attack CV
+    CV_GATE_RELEASE_INPUT,    // Gate Release CV
+    CV_GATE_HOLD_INPUT,       // Gate Hold CV
+    CV_BASS_INPUT,            // Bass CV
+    CV_MIDDLE_INPUT,          // Middle CV
+    CV_TREBLE_INPUT,          // Treble CV
+    CV_PRESENCE_INPUT,        // Presence CV
+    CV_DEPTH_INPUT,           // Depth CV
     INPUTS_LEN
 };
 
@@ -99,6 +111,13 @@ enum OutputId {
     OUTPUTS_LEN
 };
 ```
+
+**CV Input Behavior:**
+- All CV inputs accept ±5V signals
+- CV signals automatically rescale to the full parameter range
+- When a CV input is connected, it **replaces** the knob value (no attenuverter needed)
+- CV inputs are sampled at audio rate for smooth modulation
+- Disconnected CV inputs allow knob control
 
 #### Lights
 
@@ -323,7 +342,12 @@ enum ParamId {
 
 ```cpp
 enum InputId {
-    AUDIO_INPUT,  // Mono audio input
+    AUDIO_INPUT,         // Mono audio input
+    // CV inputs for all parameters
+    CV_BLEND_INPUT,      // Blend CV
+    CV_LOWPASS_INPUT,    // Low-Pass Cutoff CV
+    CV_HIGHPASS_INPUT,   // High-Pass Cutoff CV
+    CV_OUTPUT_INPUT,     // Output Level CV
     INPUTS_LEN
 };
 
@@ -332,6 +356,13 @@ enum OutputId {
     OUTPUTS_LEN
 };
 ```
+
+**CV Input Behavior:**
+- All CV inputs accept ±5V signals
+- CV signals automatically rescale to the full parameter range
+- When a CV input is connected, it **replaces** the knob value (no attenuverter needed)
+- CV inputs are sampled at audio rate for smooth modulation
+- Disconnected CV inputs allow knob control
 
 #### Lights
 
