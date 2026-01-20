@@ -320,7 +320,8 @@ void NamPlayerWidget::appendContextMenu(Menu* menu) {
         for (const std::string& file : modelFiles) {
             if (system::getExtension(file) == ".nam") {
                 std::string name = system::getStem(file);
-                submenu->addChild(createMenuItem(name, "", [=]() {
+                std::string displayName = name.length() > 50 ? name.substr(0, 50) + "..." : name;
+                submenu->addChild(createMenuItem(displayName, "", [=]() {
                     module->loadModel(file);
                 }));
             }
@@ -348,7 +349,8 @@ void NamPlayerWidget::appendContextMenu(Menu* menu) {
     std::string modelName = module->getModelName();
     if (!modelName.empty()) {
         menu->addChild(new MenuSeparator());
-        menu->addChild(createMenuLabel("Model: " + modelName));
+        std::string modelDisplayName = modelName.length() > 50 ? modelName.substr(0, 50) + "..." : modelName;
+        menu->addChild(createMenuLabel("Model: " + modelDisplayName));
         if (module->isSampleRateMismatched()) {
             menu->addChild(createMenuLabel("⚠ Sample rate mismatch (resampling active)"));
         }
