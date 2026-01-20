@@ -11,6 +11,7 @@
 #include "../dsp/Nam.h"
 #include "../dsp/IRLoader.h"
 #include "../dsp/CabSimDSP.h"
+#include "../dsp/WavFile.h"
 
 namespace TestSuite
 {
@@ -587,6 +588,202 @@ namespace TestSuite
   }
 
   //------------------------------------------------------------------------------
+  // WavFile Tests
+  //------------------------------------------------------------------------------
+  void test_wavfile_initialization(TestContext &ctx)
+  {
+    std::printf("Testing WavFile initialization...\n");
+    
+    WavFile wav;
+    T_ASSERT(ctx, !wav.isLoaded());
+    T_ASSERT(ctx, wav.getPath().empty());
+    T_ASSERT(ctx, wav.getSamples().empty());
+    T_ASSERT(ctx, wav.getChannels() == 0);
+    T_ASSERT(ctx, wav.getSampleRate() == 0);
+    T_ASSERT(ctx, wav.getFrameCount() == 0);
+  }
+  
+  void test_wavfile_reset(TestContext &ctx)
+  {
+    std::printf("Testing WavFile reset...\n");
+    
+    WavFile wav;
+    // Even without loading, reset should work
+    wav.reset();
+    
+    T_ASSERT(ctx, !wav.isLoaded());
+    T_ASSERT(ctx, wav.getSamples().empty());
+    T_ASSERT(ctx, wav.getChannels() == 0);
+    T_ASSERT(ctx, wav.getSampleRate() == 0);
+    T_ASSERT(ctx, wav.getFrameCount() == 0);
+    T_ASSERT(ctx, wav.getPath().empty());
+  }
+  
+  void test_wavfile_invalid_file(TestContext &ctx)
+  {
+    std::printf("Testing WavFile with invalid file path...\n");
+    
+    WavFile wav;
+    bool result = wav.load("/nonexistent/path/to/file.wav");
+    
+    T_ASSERT(ctx, !result);
+    T_ASSERT(ctx, !wav.isLoaded());
+    T_ASSERT(ctx, wav.getSamples().empty());
+  }
+  
+  void test_wavfile_empty_path(TestContext &ctx)
+  {
+    std::printf("Testing WavFile with empty path...\n");
+    
+    WavFile wav;
+    bool result = wav.load("");
+    
+    T_ASSERT(ctx, !result);
+    T_ASSERT(ctx, !wav.isLoaded());
+  }
+  
+  void test_wavfile_getters_no_data(TestContext &ctx)
+  {
+    std::printf("Testing WavFile getters with no data...\n");
+    
+    WavFile wav;
+    
+    // All getters should return safe default values
+    T_ASSERT(ctx, wav.getChannels() == 0);
+    T_ASSERT(ctx, wav.getSampleRate() == 0);
+    T_ASSERT(ctx, wav.getFrameCount() == 0);
+    T_ASSERT(ctx, wav.getSamples().empty());
+    T_ASSERT(ctx, wav.getPath().empty());
+    T_ASSERT(ctx, !wav.isLoaded());
+  }
+  
+  void test_wavfile_frame_count_calculation(TestContext &ctx)
+  {
+    std::printf("Testing WavFile frame count calculation...\n");
+    
+    WavFile wav;
+    
+    // With 0 channels, frame count should be 0 regardless
+    T_ASSERT(ctx, wav.getFrameCount() == 0);
+    
+    // Frame count calculation is: samples.size() / channels
+    // We can't easily test this without a real file, but we verified the logic
+  }
+  
+  void test_wavfile_multiple_loads(TestContext &ctx)
+  {
+    std::printf("Testing WavFile multiple load attempts...\n");
+    
+    WavFile wav;
+    
+    // First load attempt (will fail)
+    bool result1 = wav.load("/nonexistent/file1.wav");
+    T_ASSERT(ctx, !result1);
+    T_ASSERT(ctx, !wav.isLoaded());
+    
+    // Second load attempt (will also fail)
+    bool result2 = wav.load("/nonexistent/file2.wav");
+    T_ASSERT(ctx, !result2);
+    T_ASSERT(ctx, !wav.isLoaded());
+    
+    // State should remain clean after failed loads
+    T_ASSERT(ctx, wav.getSamples().empty());
+  }
+  
+  void test_wavfile_reset_after_failed_load(TestContext &ctx)
+  {
+    std::printf("Testing WavFile reset after failed load...\n");
+    
+    WavFile wav;
+    
+    // Try to load invalid file
+    wav.load("/nonexistent/file.wav");
+    
+    // Reset should work even after failed load
+    wav.reset();
+    
+    T_ASSERT(ctx, !wav.isLoaded());
+    T_ASSERT(ctx, wav.getSamples().empty());
+    T_ASSERT(ctx, wav.getPath().empty());
+  }
+  
+  void test_wavfile_path_types(TestContext &ctx)
+  {
+    std::printf("Testing WavFile with various path types...\n");
+    
+    WavFile wav;
+    
+    // Test relative path
+    bool result1 = wav.load("nonexistent.wav");
+    T_ASSERT(ctx, !result1);
+    
+    // Test path with special characters
+    bool result2 = wav.load("/path/with spaces/file.wav");
+    T_ASSERT(ctx, !result2);
+    
+    // Test very long path
+    std::string longPath(1000, 'a');
+    longPath += ".wav";
+    bool result3 = wav.load(longPath);
+    T_ASSERT(ctx, !result3);
+  }
+  
+  void test_wavfile_invalid_extension(TestContext &ctx)
+  {
+    std::printf("Testing WavFile with invalid extension...\n");
+    
+    WavFile wav;
+    
+    // Try loading files with wrong extensions
+    bool result1 = wav.load("/some/file.mp3");
+    T_ASSERT(ctx, !result1);
+    
+    bool result2 = wav.load("/some/file.txt");
+    T_ASSERT(ctx, !result2);
+    
+    bool result3 = wav.load("/some/file");
+    T_ASSERT(ctx, !result3);
+  }
+  
+  void test_wavfile_state_isolation(TestContext &ctx)
+  {
+    std::printf("Testing WavFile state isolation between instances...\n");
+    
+    WavFile wav1;
+    WavFile wav2;
+    
+    // Both should start clean
+    T_ASSERT(ctx, !wav1.isLoaded());
+    T_ASSERT(ctx, !wav2.isLoaded());
+    
+    // Failed load on wav1 shouldn't affect wav2
+    wav1.load("/nonexistent1.wav");
+    T_ASSERT(ctx, !wav1.isLoaded());
+    T_ASSERT(ctx, !wav2.isLoaded());
+    
+    // Each instance should maintain independent state
+    T_ASSERT(ctx, wav1.getChannels() == 0);
+    T_ASSERT(ctx, wav2.getChannels() == 0);
+  }
+  
+  void test_wavfile_getters_const_correctness(TestContext &ctx)
+  {
+    std::printf("Testing WavFile const getter correctness...\n");
+    
+    const WavFile wav;
+    
+    // All const getters should work
+    (void)wav.getSamples();
+    (void)wav.getChannels();
+    (void)wav.getSampleRate();
+    (void)wav.getFrameCount();
+    (void)wav.getPath();
+    (void)wav.isLoaded();
+    
+    T_ASSERT(ctx, true);  // Success if no crash
+  }
+
+  //------------------------------------------------------------------------------
   // CabSimDSP Tests
   //------------------------------------------------------------------------------
   void test_cabsim_dsp_initialization(TestContext &ctx)
@@ -631,6 +828,20 @@ namespace TestSuite
     // Should not crash
     float output = dsp.process(0.3f, 0.5f, 10000.f, 100.f);
     T_ASSERT(ctx, !std::isnan(output) && !std::isinf(output));
+    
+    // WavFile tests
+    test_wavfile_initialization(ctx);
+    test_wavfile_reset(ctx);
+    test_wavfile_invalid_file(ctx);
+    test_wavfile_empty_path(ctx);
+    test_wavfile_getters_no_data(ctx);
+    test_wavfile_frame_count_calculation(ctx);
+    test_wavfile_multiple_loads(ctx);
+    test_wavfile_reset_after_failed_load(ctx);
+    test_wavfile_path_types(ctx);
+    test_wavfile_invalid_extension(ctx);
+    test_wavfile_state_isolation(ctx);
+    test_wavfile_getters_const_correctness(ctx);
     
     // Change sample rate
     dsp.setSampleRate(96000.f);

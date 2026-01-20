@@ -187,6 +187,20 @@ Comprehensive documentation is available in the [manual](manual/) directory:
    make install
    ```
 
+### Running Tests
+
+Unit tests are available to verify the DSP components:
+
+```bash
+# Run basic tests
+./run_tests.sh
+
+# Run tests with code coverage analysis
+./run_tests_with_coverage.sh
+```
+
+The coverage script will display per-file and overall coverage statistics after running all tests.
+
 For more detailed build instructions and troubleshooting, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 🤝 Contributing
