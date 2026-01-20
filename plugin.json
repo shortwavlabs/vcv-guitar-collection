@@ -7,6 +7,7 @@
   "author": "Stephane Pericat",
   "authorEmail": "contact@shortwavlabs.com",
   "sourceUrl": "https://github.com/shortwavlabs/swv-guitar-collection",
+  "manualUrl": "https://github.com/shortwavlabs/swv-guitar-collection/blob/main/manual/README.md",
   "donateUrl": "https://ko-fi.com/shortwavlabs",
   "minRackVersion": "2.6.0",
   "modules": [
