@@ -103,8 +103,8 @@ void NamPlayer::process(const ProcessArgs& args) {
     // Sample rate mismatch indicator
     lights[SAMPLE_RATE_LIGHT].setBrightness(namDsp->isSampleRateMismatched() ? 1.f : 0.f);
     
-    // Gate activity indicator
-    lights[GATE_LIGHT].setBrightness(namDsp->isGateOpen() ? 1.f : 0.f);
+    // Gate activity indicator (on when gate is closed/blocking signal)
+    lights[GATE_LIGHT].setBrightness(namDsp->isGateOpen() ? 0.f : 1.f);
     
     // Accumulate input
     inputBuffer[bufferPos] = input;
@@ -275,24 +275,24 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
 
     // Tone Stack knobs (small, top row - 5 knobs)
     float toneY = 140;
-    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 100, toneY), module, NamPlayer::BASS_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 50, toneY), module, NamPlayer::MIDDLE_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX, toneY), module, NamPlayer::TREBLE_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 50, toneY), module, NamPlayer::PRESENCE_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 100, toneY), module, NamPlayer::DEPTH_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(centerX - 100, toneY), module, NamPlayer::BASS_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(centerX - 50, toneY), module, NamPlayer::MIDDLE_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(centerX, toneY), module, NamPlayer::TREBLE_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(centerX + 50, toneY), module, NamPlayer::PRESENCE_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(centerX + 100, toneY), module, NamPlayer::DEPTH_PARAM));
 
     // Noise Gate knobs (small, middle row)
     float gateY = 225;
-    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 75, gateY), module, NamPlayer::GATE_THRESHOLD_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX - 25, gateY), module, NamPlayer::GATE_ATTACK_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 25, gateY), module, NamPlayer::GATE_RELEASE_PARAM));
-    addParam(createParamCentered<RoundSmallBlackKnob>(Vec(centerX + 75, gateY), module, NamPlayer::GATE_HOLD_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(centerX - 75, gateY), module, NamPlayer::GATE_THRESHOLD_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(centerX - 25, gateY), module, NamPlayer::GATE_ATTACK_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(centerX + 25, gateY), module, NamPlayer::GATE_RELEASE_PARAM));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(centerX + 75, gateY), module, NamPlayer::GATE_HOLD_PARAM));
 
     // Lights
     float lightY = 300;
     addChild(createLightCentered<MediumLight<GreenLight>>(Vec(centerX - 15, lightY), module, NamPlayer::MODEL_LIGHT));
     addChild(createLightCentered<SmallLight<YellowLight>>(Vec(centerX, lightY), module, NamPlayer::SAMPLE_RATE_LIGHT));
-    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(centerX + 15, lightY), module, NamPlayer::GATE_LIGHT));
+    addChild(createLightCentered<MediumLight<RedLight>>(Vec(centerX + 15, lightY), module, NamPlayer::GATE_LIGHT));
 
     // Input/Output gain knobs (large, top section)
     addParam(createParamCentered<RoundBlackKnob>(Vec(25, box.size.y - 75), module, NamPlayer::INPUT_PARAM));
