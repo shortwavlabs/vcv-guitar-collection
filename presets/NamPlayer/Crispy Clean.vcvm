@@ -1,0 +1,55 @@
+{
+  "plugin": "swv-guitar-collection",
+  "model": "NamPlayer",
+  "version": "2.0.0",
+  "params": [
+    {
+      "value": 0.89619731903076172,
+      "id": 0
+    },
+    {
+      "value": 1.9948891401290894,
+      "id": 1
+    },
+    {
+      "value": -80.0,
+      "id": 2
+    },
+    {
+      "value": 0.5,
+      "id": 3
+    },
+    {
+      "value": 100.0,
+      "id": 4
+    },
+    {
+      "value": 50.0,
+      "id": 5
+    },
+    {
+      "value": 0.55737954378128052,
+      "id": 6
+    },
+    {
+      "value": 0.56028342247009277,
+      "id": 7
+    },
+    {
+      "value": 0.59300166368484497,
+      "id": 8
+    },
+    {
+      "value": 0.51397305727005005,
+      "id": 9
+    },
+    {
+      "value": 0.53786242008209229,
+      "id": 10
+    }
+  ],
+  "data": {
+    "modelPath": "/Users/sppericat/Library/Application Support/Rack2/plugins-mac-arm64/swv-guitar-collection/res/models/Phillipe P VOXAC15-JonAr1.nam",
+    "waveformColor": 0
+  }
+}

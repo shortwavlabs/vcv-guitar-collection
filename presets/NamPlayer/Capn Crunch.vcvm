@@ -1,0 +1,55 @@
+{
+  "plugin": "swv-guitar-collection",
+  "model": "NamPlayer",
+  "version": "2.0.0",
+  "params": [
+    {
+      "value": 1.0,
+      "id": 0
+    },
+    {
+      "value": 0.32018059492111206,
+      "id": 1
+    },
+    {
+      "value": -69.455192565917969,
+      "id": 2
+    },
+    {
+      "value": 0.5,
+      "id": 3
+    },
+    {
+      "value": 100.0,
+      "id": 4
+    },
+    {
+      "value": 50.0,
+      "id": 5
+    },
+    {
+      "value": 0.5325394868850708,
+      "id": 6
+    },
+    {
+      "value": 0.62104666233062744,
+      "id": 7
+    },
+    {
+      "value": 0.5425640344619751,
+      "id": 8
+    },
+    {
+      "value": 0.5,
+      "id": 9
+    },
+    {
+      "value": 0.5,
+      "id": 10
+    }
+  ],
+  "data": {
+    "modelPath": "/Users/sppericat/Library/Application Support/Rack2/plugins-mac-arm64/swv-guitar-collection/res/models/Sascha S DirtyShirleyMini_crunch_G6.nam",
+    "waveformColor": 0
+  }
+}
