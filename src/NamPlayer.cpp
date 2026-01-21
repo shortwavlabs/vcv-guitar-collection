@@ -375,7 +375,7 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     addInput(createInputCentered<PJ301MPort>(Vec(centerX + 75, gateCvY), module, NamPlayer::CV_GATE_HOLD_INPUT));
 
     // Lights
-    float lightY = 300;
+    float lightY = 305;
     addChild(createLightCentered<MediumLight<GreenLight>>(Vec(centerX - 15, lightY), module, NamPlayer::MODEL_LIGHT));
     addChild(createLightCentered<SmallLight<YellowLight>>(Vec(centerX, lightY), module, NamPlayer::SAMPLE_RATE_LIGHT));
     addChild(createLightCentered<MediumLight<RedLight>>(Vec(centerX + 15, lightY), module, NamPlayer::GATE_LIGHT));
@@ -385,8 +385,8 @@ NamPlayerWidget::NamPlayerWidget(NamPlayer* module) {
     addParam(createParamCentered<RoundBlackKnob>(Vec(box.size.x - 25, box.size.y - 75), module, NamPlayer::OUTPUT_PARAM));
     
     // Input/Output CV inputs (next to gain knobs)
-    addInput(createInputCentered<PJ301MPort>(Vec(55, box.size.y - 75), module, NamPlayer::CV_INPUT_INPUT));
-    addInput(createInputCentered<PJ301MPort>(Vec(box.size.x - 55, box.size.y - 75), module, NamPlayer::CV_INPUT_OUTPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(60, box.size.y - 75), module, NamPlayer::CV_INPUT_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(box.size.x - 60, box.size.y - 75), module, NamPlayer::CV_INPUT_OUTPUT));
 
     // Mono inputs/outputs (bottom)
     addInput(createInputCentered<PJ301MPort>(Vec(25, box.size.y - 40), module, NamPlayer::AUDIO_INPUT));
