@@ -27,6 +27,9 @@ The module will feature:
 - Faithful component-level circuit modeling
 - Attack knob (6-position step knob: 0 = 72Hz HPF (Deep), 1-5 = HPF at increasing frequencies)
 - One-knob noise gate (threshold control only, other parameters fixed)
+- 8HP panel layout (similar to CabSim module)
+- Mono processing only (no polyphony)
+- Sophisticated oversampling with polyphase filters for minimal aliasing and CPU usage
 
 ---
 
@@ -283,6 +286,37 @@ Combine whitebox circuit topology with efficient DSP implementations:
 
 ## VCV Rack Implementation
 
+### Panel Design
+
+**Layout: 8HP (40.64mm width)**
+
+The module uses a compact 8HP panel layout similar to the CabSim module in the collection:
+
+```
+┌─────────────────┐
+│   OVERDRIVE     │  
+├─────────────────┤
+│   [3-WAY SW]    │  Model selector (TS-808/TS-9/DS-1)
+│                 │
+│   ○ DRIVE       │  Drive/Distortion knob
+│   ○ TONE        │  Tone control knob
+│   ○ LEVEL       │  Output level knob
+│   ◇ ATTACK      │  6-position step knob
+│   ○ GATE        │  Noise gate threshold
+│                 │
+│   ● INPUT       │  Audio input jack
+│   ● OUTPUT      │  Audio output jack
+│                 │
+│   ● DRIVE CV    │  CV input for drive
+│   ● TONE CV     │  CV input for tone
+│   ● LEVEL CV    │  CV input for level
+│   ● ATTACK CV   │  CV input for attack (quantized)
+│   ● GATE CV     │  CV input for gate threshold
+└─────────────────┘
+```
+
+**Note:** A placeholder panel SVG will be created during implementation. Final graphic design will be completed separately.
+
 ### Module Structure
 
 ```cpp
@@ -308,7 +342,7 @@ struct OverdriveModule : Module {
         DRIVE_CV,
         TONE_CV,
         LEVEL_CV,
-        ATTACK_CV,
+        ATTACK_CV,        // Quantized to discrete positions 0-5
         GATE_CV,
         INPUTS_LEN
     };
@@ -320,8 +354,8 @@ struct OverdriveModule : Module {
 
     // DSP instances
     std::unique_ptr<OverdriveDSP> odDsp;
-    NoiseGate noiseGate;  // Reuse existing class
-    OnePoleHPF attackFilter;
+    
+    // Note: Module is MONO only, no polyphony support
 };
 ```
 
@@ -953,6 +987,14 @@ void configParams() {
 
 // In process()
 int attackPos = static_cast<int>(params[ATTACK_PARAM].getValue());
+
+// Apply CV modulation (quantized to discrete steps using VCV Rack's rescale)
+if (inputs[ATTACK_CV].isConnected()) {
+    float cv = clamp(inputs[ATTACK_CV].getVoltage(), 0.f, 10.f);
+    int cvPos = static_cast<int>(std::round(rescale(cv, 0.f, 10.f, 0.f, 5.f)));
+    attackPos = clamp(attackPos + cvPos, 0, 5);
+}
+
 odDsp->setAttack(attackPos);
 ```
 
@@ -1238,6 +1280,18 @@ private:
 
 ## Testing and Validation
 
+### Unit Test Strategy
+
+**Scope:** Unit tests only (no hardware validation or integration testing)
+
+**Test Coverage:**
+- DSP component behavior (clippers, tone stacks, filters)
+- Model switching logic
+- Parameter bounds and edge cases
+- Oversampling accuracy
+- Attack parameter quantization
+- Noise gate threshold mapping
+
 ### Unit Test Structure
 
 ```cpp
@@ -1393,18 +1447,20 @@ float output = od.process(input);
 2. Implement hard clipper (DS-1)
 3. Basic tone controls for each model
 4. 3-way model switching
-5. Basic 4x oversampling (decimation/interpolation)
+5. Sophisticated 4x oversampling using polyphase filters (minimal CPU, minimal aliasing)
 
 ### Phase 2: Enhanced Features
-6. Attack filter (high-pass)
-7. One-knob noise gate integration
+6. Attack capacitor switching (integrated into clipping stage)
+7. One-knob noise gate integration (reuse NoiseGate from Nam.h)
 8. Output stage variations (TS-808 vs TS-9)
+9. Separate high-pass filter implementation for attack control
 
 ### Phase 3: Polish and Optimization
-9. Component-level accuracy refinement
-10. Anti-aliasing optimization (advanced)
-11. CV modulation for all parameters
-11. Preset management
+10. Component-level accuracy refinement
+11. CV modulation for all parameters (Attack CV quantized to discrete steps)
+12. Unit tests for all DSP components
+13. Panel placeholder SVG (8HP layout)
+14. Performance profiling and optimization
 
 ---
 
