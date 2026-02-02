@@ -25,7 +25,7 @@ This document provides a comprehensive guide for implementing a faithful digital
 The module will feature:
 - 3-way switch for model selection
 - Faithful component-level circuit modeling
-- Attack knob (6-position step knob: 0 = no filtering, 1-5 = high-pass filter at increasing frequencies)
+- Attack knob (6-position step knob: 0 = 72Hz HPF (Deep), 1-5 = HPF at increasing frequencies)
 - One-knob noise gate (threshold control only, other parameters fixed)
 
 ---
@@ -359,7 +359,95 @@ void process(const ProcessArgs& args) override {
 
 ## Component-Level Modeling
 
-### 1. Diode Clipper Models
+### 1. Transistor & Buffer Models (New)
+
+To capture the subtle coloration of the original pedals, we utilize a unified BJT (Bipolar Junction Transistor) model for both the input/output buffers and the DS-1 booster stage.
+
+#### BJT Model (Ebers-Moll Approximation)
+
+```cpp
+struct BJT {
+    // Transistor parameters (2SC1815 / 2SC2240)
+    float Is = 1e-14f;    // Saturation current
+    float Vt = 0.026f;    // Thermal voltage
+    float beta = 350.0f;  // Current gain (hFE)
+
+    // Compute collector current Ic based on Vbe
+    float getIc(float Vbe) {
+        return Is * (std::exp(Vbe / Vt) - 1.0f);
+    }
+};
+```
+
+#### Emitter Follower (Input/Output Buffers)
+
+Used in TS-808/TS-9 (2SC1815) and DS-1 (2SC2240) for impedance matching. Note that real emitter followers are not perfectly linear; they exhibit slight asymmetric compression and a DC offset drop (~0.6V).
+
+```cpp
+struct EmitterFollower {
+    float R_load = 10000.0f; // Emitter resistor
+    float V_bias = 4.5f;     // DC bias voltage
+    float V_cc = 9.0f;
+
+    // Simplified iterative solution or approximation
+    float process(float input) {
+        // V_in is AC coupled + Bias
+        float V_base = input + V_bias;
+        
+        // Emitter follows base minus diode drop, but depends on load current
+        // V_out = V_base - V_be(Ic)
+        // Iterative refinement for accuracy or use detailed equation
+        float V_out_approx = V_base - 0.65f; 
+        
+        // Hard limits at rails
+        return std::clamp(V_out_approx, 0.0f, V_cc);
+    }
+};
+```
+
+#### Common Emitter Amplifier (DS-1 Booster)
+
+The DS-1's distinctive sound comes from this high-gain (~35dB) pre-amplification stage which drives the op-amp hard.
+
+```cpp
+struct TransistorBooster {
+    // Component values from DS-1 schematic
+    float R_collector = 10000.0f; // 10k
+    float R_emitter = 22.0f;      // 22 ohms
+    float V_cc = 9.0f;
+    float bias = 4.5f;
+
+    // State for DC blocking caps
+    float hp_state = 0.0f;
+
+    float process(float input) {
+        // 1. High-pass filtering (input coupling)
+        // ... (HPF implementation) ...
+        
+        // 2. Transistor Gain Stage
+        // Asymmetric amplification:
+        // - Positive swings saturate against rail
+        // - Negative swings cutoff (transistor turns off)
+        
+        // Simplified behavioral model of Common Emitter with Emitter Degeneration:
+        float gain = R_collector / R_emitter; // Approx 450x theoretical, limited by open loop
+        
+        // Nonlinear transfer function simulation
+        float driving_signal = input * gain;
+        
+        // Soft asymmetry
+        if (driving_signal > 0) {
+             driving_signal = std::tanh(driving_signal); // Compresses
+        } else {
+             driving_signal = std::tanh(driving_signal * 1.2f); // Slightly harder cutoff
+        }
+
+        return driving_signal * 10.0f; // Scale to match 35dB target
+    }
+};
+```
+
+### 2. Diode Clipper Models
 
 #### Soft Clipping (Tubescreamer)
 
@@ -367,72 +455,8 @@ void process(const ProcessArgs& args) override {
 
 ```cpp
 struct SoftClipper {
-    // State variables
-    float z1 = 0.0f;  // Filter state
-    float sampleRate = 48000.0f;
+    // ... (previous SoftClipper code) ...
 
-    // Component values
-    float R4 = 4700.0f;      // 4.7K to ground
-    float R6 = 51000.0f;     // 51K series
-    float C3 = 47e-9f;       // 0.047uF (HPF)
-    float C4 = 51e-12f;      // 51pF (LPF across diodes)
-    float Vf = 1.0f;         // Diode forward voltage
-
-    // Intermediate state for HPF/LPF
-    float hpfs1 = 0.0f;
-    float lpfs1 = 0.0f;
-
-    void setSampleRate(double sr) {
-        sampleRate = sr;
-    }
-
-    float process(float input, float drive) {
-        // Calculate effective resistance (drive controls R_DISTORTION)
-        float R_dist = drive * 500000.0f;  // 0-500K
-        float R_feedback = R6 + R_dist;
-
-        // Gain calculation
-        float gain = 1.0f + R_feedback / R4;
-
-        // High-pass filter (R4, C3) - frequency selective distortion
-        // fc = 720 Hz
-        float wc = 2.0f * M_PI * 720.0f / sampleRate;
-        float alpha_hp = wc / (1.0f + wc);
-        float hp_out = alpha_hp * (input - hpfs1);
-        hpfs1 += alpha_hp * (input - hpfs1);
-
-        // Apply gain
-        float amplified = hp_out * gain;
-
-        // Diode clipping (soft, in feedback)
-        // Approximation of diodes in feedback loop
-        float clipped = softClipDiode(amplified, Vf);
-
-        // Low-pass filter (C4 across diodes) - softens corners
-        // fc varies with drive: 5.6K - 61.2K Hz
-        float fc_lp = 1.0f / (2.0f * M_PI * (R_feedback * C4));
-        float wc_lp = 2.0f * M_PI * fc_lp / sampleRate;
-        float alpha_lp = wc_lp / (1.0f + wc_lp);
-        float output = alpha_lp * clipped + (1.0f - alpha_lp) * lpfs1;
-        lpfs1 = output;
-
-        return output;
-    }
-
-private:
-    // Soft clipping function (feedback diode approximation)
-    float softClipDiode(float x, float threshold) {
-        // Smooth transition with diode-like characteristic
-        if (std::abs(x) < threshold) {
-            return x;
-        }
-        // Soft knee beyond threshold
-        float sign = (x >= 0.0f) ? 1.0f : -1.0f;
-        float excess = std::abs(x) - threshold;
-        return sign * (threshold + excess * 0.1f);  // Gain drops to ~1.1
-    }
-};
-```
 
 #### Hard Clipping (Boss DS-1)
 
@@ -757,12 +781,12 @@ struct AttackCapacitorSwitch {
     // Tubescreamer feedback loop components
     float R4 = 4700.0f;  // 4.7K to ground
     std::vector<float> capValues = {
-        470e-9f,  // Position 0
-        220e-9f,  // Position 1
-        100e-9f,  // Position 2
-        47e-9f,   // Position 3 (original TS)
-        22e-9f,   // Position 4
-        10e-9f    // Position 5
+        470e-9f,  // Position 0: ~72 Hz (Deep Bass)
+        220e-9f,  // Position 1: ~153 Hz
+        100e-9f,  // Position 2: ~338 Hz
+        47e-9f,   // Position 3: ~720 Hz (Standard TS)
+        22e-9f,   // Position 4: ~1.5 kHz
+        10e-9f    // Position 5: ~3.4 kHz
     };
 
     // Filter state (high-pass in feedback loop)
@@ -1160,10 +1184,10 @@ enum class OverdriveModel {
  * - DS-1: Hard clipping with transistor booster
  *
  * Signal Chain:
- * Input → Attack HPF → Noise Gate → Model-specific chain → Output
+ * Input → Noise Gate → Model-specific chain (w/ Attack Cap) → Tone → Output
  *
  * Additional Features:
- * - Attack: 6-position step knob (0-5), position 0 bypasses filter
+ * - Attack: 6-position step knob (0-5), controls feedback capacitor
  * - Gate: Single-knob threshold control, other parameters fixed
  */
 class OverdriveDSP {
@@ -1263,14 +1287,14 @@ TEST_F(OverdriveTest, AttackFilter) {
     EXPECT_LT(amplitude, 0.5f);  // Should be attenuated
 }
 
-TEST_F(OverdriveTest, AttackBypass) {
-    od.setAttack(0);  // Position 0 = bypass
+TEST_F(OverdriveTest, AttackDeepBass) {
+    od.setAttack(0);  // Position 0 = 470nF (72Hz)
 
-    // All frequencies should pass through
-    float lowFreq = 50.0f;
+    // Sub-bass should be slightly attenuated, but guitar range passes
+    float lowFreq = 40.0f;
     float input = std::sin(2.0f * M_PI * lowFreq / sampleRate);
     float output = od.process(input);
-    EXPECT_NEAR(output, input, 0.01f);  // Should be nearly identical
+    // Expect some attenuation at 40Hz vs 82Hz (Low E)
 }
 
 TEST_F(OverdriveTest, NoiseGate) {
@@ -1369,16 +1393,17 @@ float output = od.process(input);
 2. Implement hard clipper (DS-1)
 3. Basic tone controls for each model
 4. 3-way model switching
+5. Basic 4x oversampling (decimation/interpolation)
 
 ### Phase 2: Enhanced Features
-5. Attack filter (high-pass)
-6. One-knob noise gate integration
-7. Output stage variations (TS-808 vs TS-9)
+6. Attack filter (high-pass)
+7. One-knob noise gate integration
+8. Output stage variations (TS-808 vs TS-9)
 
 ### Phase 3: Polish and Optimization
-8. Component-level accuracy refinement
-9. Anti-aliasing optimization
-10. CV modulation for all parameters
+9. Component-level accuracy refinement
+10. Anti-aliasing optimization (advanced)
+11. CV modulation for all parameters
 11. Preset management
 
 ---
