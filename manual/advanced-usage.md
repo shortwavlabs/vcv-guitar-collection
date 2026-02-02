@@ -763,32 +763,153 @@ Automate Guitar Tools parameters from your DAW:
 
 ### CV Modulation (Standalone VCV)
 
-Use CV sources to modulate parameters:
+NAM Player includes **dedicated CV inputs for all parameters**, enabling dynamic modulation without attenuverters.
 
-#### Example: Dynamic EQ
+#### Available CV Inputs
+
+**NAM Player:**
+- **Input/Output Gain**: CV_INPUT_INPUT, CV_INPUT_OUTPUT
+- **Noise Gate**: CV_GATE_THRESHOLD_INPUT, CV_GATE_ATTACK_INPUT, CV_GATE_RELEASE_INPUT, CV_GATE_HOLD_INPUT
+- **5-Band EQ**: CV_BASS_INPUT, CV_MIDDLE_INPUT, CV_TREBLE_INPUT, CV_PRESENCE_INPUT, CV_DEPTH_INPUT
+
+**CV Behavior:**
+- Accepts **±5V** standard CV signals
+- Auto-scales to full parameter range (no attenuverter needed)
+- When connected, **replaces** knob value
+- Audio-rate processing for smooth modulation
+- Disconnect to return control to knob
+
+#### Example 1: Envelope-Controlled Input Gain
 
 ```
-[Envelope Follower] → [Attenuator] → INPUT_PARAM (cv input)
-         ↑
-    [Audio Input]
+[Audio Input] → [Envelope Follower] → CV_INPUT_INPUT → NAM Player
 ```
 
-**Result:** EQ responds to playing dynamics.
+**Result:** Input gain follows your playing dynamics - play harder for more saturation.
 
-#### Example: Rhythmic Cabinet Blend
+**Setup:**
+1. Connect your guitar to an Envelope Follower
+2. Connect follower output to NAM Player's CV_INPUT_INPUT
+3. Adjust envelope follower attack/release for responsiveness
+
+#### Example 2: LFO-Modulated Treble (Auto-Wah Effect)
 
 ```
-[LFO] → BLEND_PARAM (cv input)
+[LFO] → CV_TREBLE_INPUT → NAM Player
 ```
 
-**Result:** Blend sweeps between IRs rhythmically.
+**Result:** Treble sweeps create tremolo-like brightness changes.
 
-#### Creating CV Inputs
+**Setup:**
+1. Add an LFO module (try Fundamental LFO-1)
+2. Set LFO to triangle or sine wave
+3. Connect to CV_TREBLE_INPUT
+4. Adjust LFO frequency for desired sweep speed
 
-Module parameters can accept CV via right-click menu:
-1. Right-click parameter knob
-2. Select input port behavior
-3. Connect CV source
+#### Example 3: Sidechain Noise Gate
+
+```
+[Kick Drum] → [Envelope Follower] → [Offset] → CV_GATE_THRESHOLD_INPUT → NAM Player
+```
+
+**Result:** Gate opens/closes based on kick drum hits for rhythmic gating.
+
+**Setup:**
+1. Extract envelope from kick drum
+2. Use an Offset module to shift range to gate threshold values
+3. Connect to CV_GATE_THRESHOLD_INPUT
+4. Fine-tune offset and gain for desired gating response
+
+#### Example 4: Expression Pedal Control
+
+```
+[MIDI-CV Module] → CV_INPUT_INPUT → NAM Player
+```
+
+**Result:** Control input gain (like a volume swell) with MIDI expression pedal.
+
+**Setup:**
+1. Add MIDI-CV module and configure for CC input
+2. Map your expression pedal to desired CC
+3. Connect to any CV input
+4. Scale CC range as needed
+
+#### Example 5: Dynamic EQ for Mix Context
+
+```
+[Sequencer] → CV_MIDDLE_INPUT → NAM Player
+```
+
+**Result:** Middle frequency changes by song section (verse/chorus).
+
+**Advanced Tips:**
+- **Combine CV sources**: Use multiple LFOs/envelopes for complex modulation
+- **Quantize CV**: Use Sample & Hold for stepped changes
+- **Invert signals**: Use offset/inverter modules to flip CV range
+- **Smooth rapid changes**: Add a slew limiter to prevent zipper noise
+
+#### Cabinet Simulator CV Examples
+
+**Cabinet Simulator** also includes full CV control over all parameters:
+
+**Available CV Inputs:**
+- **CV_BLEND_INPUT**: Morph between IR A and IR B
+- **CV_LOWPASS_INPUT**: Dynamic brightness control
+- **CV_HIGHPASS_INPUT**: Automated low-end filtering
+- **CV_OUTPUT_INPUT**: Volume automation
+
+#### Example 6: LFO-Driven IR Morphing
+
+```
+[LFO - Triangle Wave] → CV_BLEND_INPUT → Cabinet Simulator
+```
+
+**Result:** Smoothly morph between two different cabinets in rhythm.
+
+**Setup:**
+1. Load contrasting IRs (e.g., close-mic vs. room-mic)
+2. Connect slow triangle LFO to CV_BLEND_INPUT
+3. Adjust LFO rate for desired morph speed
+4. Creates evolving, spacious tone
+
+#### Example 7: Dynamic Filter Response
+
+```
+[Envelope Follower] → [Offset/Scale] → CV_LOWPASS_INPUT → Cabinet Simulator
+```
+
+**Result:** Lowpass filter opens with playing dynamics - creates auto-wah effect.
+
+**Setup:**
+1. Extract envelope from guitar signal
+2. Scale and offset to desired filter range
+3. Connect to CV_LOWPASS_INPUT
+4. Play dynamically - soft notes are dark, hard notes are bright
+
+#### Example 8: Sequenced Cabinet Switching
+
+```
+[8-Step Sequencer] → CV_BLEND_INPUT → Cabinet Simulator
+```
+
+**Result:** Step through blend positions for rhythmic cabinet changes.
+
+**Setup:**
+1. Configure sequencer with varied voltage steps
+2. Sync to clock for rhythmic switching
+3. Load two contrasting IRs
+4. Each step changes the IR blend ratio
+
+**Combined NAM + CabSim CV Routing:**
+
+Create complex, evolving tones by modulating both modules simultaneously:
+
+```
+[Envelope Follower] → CV_INPUT_INPUT (NAM Player)
+                    → CV_BLEND_INPUT (Cabinet Simulator)
+```
+
+**Result:** Playing dynamics control both amp saturation and cabinet blend.
 
 ---
 

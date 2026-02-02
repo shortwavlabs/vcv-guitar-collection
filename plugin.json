@@ -1,5 +1,5 @@
 {
-  "slug": "swv-guitar-collection",
+  "slug": "swv-guitar-tools",
   "name": "Guitar Tools",
   "version": "2.0.0",
   "license": "GPL-3.0-or-later",
@@ -7,6 +7,7 @@
   "author": "Stephane Pericat",
   "authorEmail": "contact@shortwavlabs.com",
   "sourceUrl": "https://github.com/shortwavlabs/swv-guitar-collection",
+  "manualUrl": "https://github.com/shortwavlabs/swv-guitar-collection/blob/main/manual/README.md",
   "donateUrl": "https://ko-fi.com/shortwavlabs",
   "minRackVersion": "2.6.0",
   "modules": [
@@ -14,13 +15,13 @@
       "slug": "NamPlayer",
       "name": "NAM Player",
       "description": "Neural Amp Modeler player for guitar amp simulation with noise gate and 5-band EQ",
-      "tags": ["Effect", "Distortion", "Equalizer", "Hardware Clone"]
+      "tags": ["Effect", "Distortion", "Equalizer"]
     },
     {
       "slug": "CabSim",
       "name": "Cabinet Simulator",
       "description": "Convolution-based cabinet simulator with dual IR loading, blending, and tone shaping filters",
-      "tags": ["Effect", "Equalizer", "Hardware Clone"]
+      "tags": ["Effect", "Equalizer"]
     }
   ]
 }

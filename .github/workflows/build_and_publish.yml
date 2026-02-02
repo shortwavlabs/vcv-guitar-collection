@@ -113,11 +113,11 @@ jobs:
       # ------------------------------------------------------------------------
       # Run Tests
       # ------------------------------------------------------------------------
-      - name: Run Tests
+      - name: Run Tests (with coverage reporting)
         shell: bash
         run: |
-          chmod +x ./run_tests.sh
-          ./run_tests.sh
+          chmod +x ./run_tests_with_coverage.sh
+          ./run_tests_with_coverage.sh
 
       # ------------------------------------------------------------------------
       # Build Plugin (Linux/Mac)

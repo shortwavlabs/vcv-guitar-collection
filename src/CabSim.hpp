@@ -17,6 +17,11 @@ struct CabSim : Module {
     };
     enum InputId {
         AUDIO_INPUT,
+        // CV inputs for all parameters
+        CV_BLEND_INPUT,
+        CV_LOWPASS_INPUT,
+        CV_HIGHPASS_INPUT,
+        CV_OUTPUT_INPUT,
         INPUTS_LEN
     };
     enum OutputId {

@@ -79,7 +79,7 @@ Let's create a simple but powerful guitar processing chain.
 
 #### Step 3: Load an Amp Model
 
-1. Click the **`LOAD`** button on NAM Player
+1. **Right-click** NAM Player
 2. Try one of the bundled models:
    - **"Helga B 5150 BlockLetter - NoBoost.nam"** - Classic high-gain rock tone
    - **"George B Ceriatone King Kong Channel 1 60s mode.nam"** - Vintage British crunch
@@ -123,7 +123,7 @@ The NAM Player is your virtual guitar amplifier, pedal, or preamp.
 
 #### Method 1: Browse Bundled Presets
 
-Use the **`<`** and **`>`** buttons to cycle through the 30+ included models.
+Available in the contextual menu as "Bundled models".
 
 **Popular Models:**
 - **5150 / 6505 Series**: High-gain metal tones
@@ -132,7 +132,7 @@ Use the **`<`** and **`>`** buttons to cycle through the 30+ included models.
 
 #### Method 2: Load Custom Models
 
-1. Click the **`LOAD`** button
+1. **Right-click** NAM Player, and click "Load model"
 2. Navigate to your `.nam` model files
 3. Select a model to load
 
@@ -262,6 +262,48 @@ PRESENCE: -4dB (dark, warm)
 - Cut rather than boost when possible
 - Use your ears, not your eyes!
 
+### CV Modulation
+
+Every parameter on the NAM Player has a dedicated CV input for modulation and automation.
+
+#### Using CV Inputs
+
+**How it Works:**
+- Each knob has a corresponding CV input jack below or next to it
+- CV inputs accept **±5V** signals (standard in VCV Rack)
+- When a CV cable is connected, it **replaces** the knob value
+- No attenuverters needed - CV signals auto-scale to full parameter range
+
+**Available CV Inputs:**
+- **Input/Output Gain**: Dynamic volume control
+- **Noise Gate** (Threshold, Attack, Release, Hold): Automated gating
+- **5-Band EQ** (Bass, Middle, Treble, Presence, Depth): Dynamic tone shaping
+
+**Example Uses:**
+
+*Sidechain Gate:*
+```
+[Kick Drum Envelope] → CV GATE THRESHOLD → NAM Player
+```
+Opens the gate based on kick drum hits for rhythmic gating.
+
+*Dynamic EQ:*
+```
+[LFO] → CV TREBLE → NAM Player
+```
+Modulate treble for tremolo-like brightness changes.
+
+*Expression Control:*
+```
+[MIDI-CV Module] → CV INPUT → NAM Player
+```
+Control input gain with a MIDI expression pedal.
+
+**Tips:**
+- CV inputs are audio-rate for smooth, responsive modulation
+- Combine multiple CV sources for complex automation
+- Disconnecting CV cable returns control to the knob
+
 ---
 
 ## Cabinet Simulator Module
@@ -288,8 +330,6 @@ An IR is a recording of how a speaker cabinet colors sound. It captures:
 **The green light** next to "A" indicates an IR is loaded.
 
 #### Where to Find IRs
-
-**Bundled IRs:** Check the plugin's `res/irs/` directory (if included).
 
 **Free IR Sources:**
 - [Kalthallen Cabs](https://www.kalthallen-cabs.com/) - Free IR library
@@ -392,6 +432,50 @@ HIGHPASS: 120Hz (extremely tight low end)
 The **`OUTPUT`** knob controls final cabinet volume.
 
 **Best Practice:** Set for unity gain (input level ≈ output level) unless intentionally boosting/cutting.
+
+### CV Modulation
+
+The Cabinet Simulator includes **dedicated CV inputs for all parameters**, enabling dynamic control over IR blending and tone shaping.
+
+#### Available CV Inputs
+
+- **Blend CV**: Morph between IR A and IR B
+- **Low-Pass Cutoff CV**: Dynamic brightness control
+- **High-Pass Cutoff CV**: Automated low-end filtering
+- **Output Level CV**: Volume automation
+
+#### Using CV Inputs
+
+**How it Works:**
+- Each knob has a corresponding CV input jack
+- CV inputs accept **±5V** signals (standard in VCV Rack)
+- When a CV cable is connected, it **replaces** the knob value
+- No attenuverters needed - CV signals auto-scale to full parameter range
+
+**Example Uses:**
+
+*Rhythmic IR Morphing:*
+```
+[LFO] → CV BLEND → Cabinet Simulator
+```
+Blend sweeps between two different cabinets rhythmically.
+
+*Dynamic Filter Sweep:*
+```
+[Envelope Follower] → CV LOWPASS → Cabinet Simulator
+```
+Lowpass filter follows playing dynamics - harder playing = brighter tone.
+
+*Automated Blend Changes:*
+```
+[Sequencer] → CV BLEND → Cabinet Simulator
+```
+Switch between IRs by song section (verse uses IR A, chorus uses IR B).
+
+**Tips:**
+- Use slow LFOs on blend for subtle movement between cabinets
+- Automate filters to create wah-like effects
+- CV inputs are audio-rate for smooth modulation
 
 ---
 

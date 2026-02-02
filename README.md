@@ -39,18 +39,9 @@ Whether you're creating guitar-driven patches, processing recorded guitars, or b
 
 ## 📦 Installation
 
-### Option 1: VCV Library (Recommended)
-
-1. Open VCV Rack
-2. Navigate to the Library menu
+1. Go to [VCV Rack's Library](https://library.vcvrack.com/)
 3. Search for "Guitar Tools" or "Shortwav Labs"
 4. Click "Subscribe" to install
-
-### Option 2: Manual Installation from Release
-
-1. Download the latest `.vcvplugin` file from the [Releases](https://github.com/shortwavlabs/swv-guitar-collection/releases) page
-2. Drag and drop the file onto VCV Rack, or double-click to install
-3. Restart VCV Rack if prompted
 
 ### Option 3: Build from Source
 
@@ -62,7 +53,7 @@ See the [Building from Source](#building-from-source) section below for detailed
 
 1. Add **NAM Player** to your patch from the module browser
 2. Connect your guitar/audio source to the `IN` input
-3. Click the `LOAD` button to browse bundled models, or use `<` / `>` to navigate presets
+3. Open the contextual menu to browse bundled models
 4. Adjust `INPUT` gain to drive the amp model (watch for clipping)
 5. Use the noise gate knob to reduce background noise
 6. Shape your tone with the 5-band EQ
@@ -102,8 +93,6 @@ Comprehensive documentation is available in the [manual](manual/) directory:
 - `OUTPUT` - Output level (-24dB to +24dB)
 - Noise Gate: `THRESHOLD`, `ATTACK`, `RELEASE`, `HOLD`
 - EQ: `BASS`, `MIDDLE`, `TREBLE`, `PRESENCE`, `DEPTH`
-- `LOAD` - Load custom `.nam` model
-- `<` / `>` - Navigate bundled presets
 
 **Indicators:**
 - Green light: Model loaded successfully
@@ -187,6 +176,20 @@ Comprehensive documentation is available in the [manual](manual/) directory:
    make install
    ```
 
+### Running Tests
+
+Unit tests are available to verify the DSP components:
+
+```bash
+# Run basic tests
+./run_tests.sh
+
+# Run tests with code coverage analysis
+./run_tests_with_coverage.sh
+```
+
+The coverage script will display per-file and overall coverage statistics after running all tests.
+
 For more detailed build instructions and troubleshooting, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 🤝 Contributing
@@ -243,14 +246,13 @@ See [res/models/README.md](res/models/README.md) for full credits and model desc
 
 ## Loading Custom Models
 
-1. Click the `LOAD` button on the NAM Player module
+1. Click the `Load custom model` option in the contextual menu
 2. Navigate to your `.nam` file
 3. Select and open the file
-4. The model name will appear in the display when loaded successfully
+4. The model name will appear in the menu when loaded successfully
 
 NAM models can be found at:
 - [ToneHunt](https://tonehunt.org/) - Community model repository
-- [NAM Discord](https://discord.gg/enV3wSDBcf) - Community sharing
 - Create your own using [Neural Amp Modeler](https://github.com/sdatkinson/neural-amp-modeler)
 
 ## Technical Details
