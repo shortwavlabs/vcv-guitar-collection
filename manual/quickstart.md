@@ -79,7 +79,7 @@ Let's create a simple but powerful guitar processing chain.
 
 #### Step 3: Load an Amp Model
 
-1. Click the **`LOAD`** button on NAM Player
+1. **Right-click** NAM Player
 2. Try one of the bundled models:
    - **"Helga B 5150 BlockLetter - NoBoost.nam"** - Classic high-gain rock tone
    - **"George B Ceriatone King Kong Channel 1 60s mode.nam"** - Vintage British crunch
@@ -123,7 +123,7 @@ The NAM Player is your virtual guitar amplifier, pedal, or preamp.
 
 #### Method 1: Browse Bundled Presets
 
-Use the **`<`** and **`>`** buttons to cycle through the 30+ included models.
+Available in the contextual menu as "Bundled models".
 
 **Popular Models:**
 - **5150 / 6505 Series**: High-gain metal tones
@@ -132,7 +132,7 @@ Use the **`<`** and **`>`** buttons to cycle through the 30+ included models.
 
 #### Method 2: Load Custom Models
 
-1. Click the **`LOAD`** button
+1. **Right-click** NAM Player, and click "Load model"
 2. Navigate to your `.nam` model files
 3. Select a model to load
 
@@ -330,8 +330,6 @@ An IR is a recording of how a speaker cabinet colors sound. It captures:
 **The green light** next to "A" indicates an IR is loaded.
 
 #### Where to Find IRs
-
-**Bundled IRs:** Check the plugin's `res/irs/` directory (if included).
 
 **Free IR Sources:**
 - [Kalthallen Cabs](https://www.kalthallen-cabs.com/) - Free IR library
