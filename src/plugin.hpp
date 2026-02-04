@@ -9,3 +9,4 @@ extern Plugin* pluginInstance;
 // Declare each Model, defined in each module source file
 extern Model* modelNamPlayer;
 extern Model* modelCabSim;
+extern Model* modelOverdrive;

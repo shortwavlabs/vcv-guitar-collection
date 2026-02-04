@@ -12,6 +12,13 @@
 #include "../dsp/IRLoader.h"
 #include "../dsp/CabSimDSP.h"
 #include "../dsp/WavFile.h"
+#include "../dsp/Oversampler.h"
+#include "../dsp/SingleKnobNoiseGate.h"
+#include "../dsp/SoftClipper.h"
+#include "../dsp/HardClipper.h"
+#include "../dsp/ToneStack.h"
+#include "../dsp/TransistorStage.h"
+#include "../dsp/OverdriveDSP.h"
 
 namespace TestSuite
 {
@@ -994,6 +1001,133 @@ namespace TestSuite
   }
 
   //------------------------------------------------------------------------------
+  // Overdrive DSP Tests
+  //------------------------------------------------------------------------------
+  void test_oversampler_basic(TestContext &ctx)
+  {
+    std::printf("Testing Oversampler basic functionality...\n");
+
+    Oversampler os;
+    float up[Oversampler::kFactor] = {};
+    os.upsample(1.0f, up);
+
+    for (int i = 0; i < Oversampler::kFactor; ++i) {
+      T_ASSERT(ctx, !std::isnan(up[i]) && !std::isinf(up[i]));
+    }
+
+    float down = os.downsample(up);
+    T_ASSERT(ctx, !std::isnan(down) && !std::isinf(down));
+    T_ASSERT(ctx, std::abs(down) < 2.0f);
+  }
+
+  void test_single_knob_noise_gate(TestContext &ctx)
+  {
+    std::printf("Testing SingleKnobNoiseGate mapping...\n");
+
+    SingleKnobNoiseGate gate;
+    gate.setThreshold(0.f);
+    T_ASSERT_NEAR(ctx, gate.getThresholdDb(), -20.f, 1e-3f);
+
+    gate.setThreshold(1.f);
+    T_ASSERT_NEAR(ctx, gate.getThresholdDb(), -80.f, 1e-3f);
+
+    float out = gate.process(0.5f);
+    T_ASSERT(ctx, !std::isnan(out) && !std::isinf(out));
+  }
+
+  void test_soft_clipper_behavior(TestContext &ctx)
+  {
+    std::printf("Testing SoftClipper behavior...\n");
+
+    SoftClipper clipper;
+    clipper.setSampleRate(48000.0);
+    clipper.setDrive(0.8f);
+    clipper.setAttackPosition(2);
+
+    clipper.setModel(OverdriveModel::TS808);
+    float gain808 = clipper.getOutputGain();
+
+    clipper.setModel(OverdriveModel::TS9);
+    float gain9 = clipper.getOutputGain();
+
+    T_ASSERT(ctx, gain808 != gain9);
+
+    float out = clipper.process(2.0f);
+    T_ASSERT(ctx, !std::isnan(out) && !std::isinf(out));
+  }
+
+  void test_hard_clipper_limits(TestContext &ctx)
+  {
+    std::printf("Testing HardClipper limits...\n");
+
+    HardClipper clipper;
+    clipper.setSampleRate(48000.0);
+    clipper.setDrive(1.0f);
+
+    float out = clipper.process(10.0f);
+    T_ASSERT(ctx, std::abs(out) <= 1.0f);
+  }
+
+  void test_tone_stack_extremes(TestContext &ctx)
+  {
+    std::printf("Testing ToneStack extremes...\n");
+
+    TubeScreamerTone tsTone;
+    tsTone.setSampleRate(48000.0);
+    tsTone.setTone(0.0f);
+    float low = tsTone.process(0.5f);
+    tsTone.setTone(1.0f);
+    float high = tsTone.process(0.5f);
+    T_ASSERT(ctx, !std::isnan(low) && !std::isnan(high));
+
+    DS1Tone dsTone;
+    dsTone.setSampleRate(48000.0);
+    dsTone.setTone(0.0f);
+    float dsLow = dsTone.process(0.5f);
+    dsTone.setTone(1.0f);
+    float dsHigh = dsTone.process(0.5f);
+    T_ASSERT(ctx, !std::isnan(dsLow) && !std::isnan(dsHigh));
+  }
+
+  void test_transistor_stages(TestContext &ctx)
+  {
+    std::printf("Testing Transistor stages...\n");
+
+    EmitterFollower follower;
+    follower.setSampleRate(48000.0);
+    float out = follower.process(0.3f);
+    T_ASSERT(ctx, !std::isnan(out) && !std::isinf(out));
+
+    TransistorBooster booster;
+    booster.setSampleRate(48000.0);
+    float boosted = booster.process(0.3f);
+    T_ASSERT(ctx, !std::isnan(boosted) && !std::isinf(boosted));
+  }
+
+  void test_overdrive_dsp_basic(TestContext &ctx)
+  {
+    std::printf("Testing OverdriveDSP basic processing...\n");
+
+    OverdriveDSP dsp;
+    dsp.setSampleRate(48000.0);
+    dsp.setModel(OverdriveModel::TS808);
+    dsp.setDrive(0.6f);
+    dsp.setTone(0.4f);
+    dsp.setLevel(0.8f);
+    dsp.setAttack(3);
+    dsp.setGate(0.0f);
+
+    float output = 0.f;
+    for (int i = 0; i < 256; ++i) {
+      float input = 0.5f * std::sin(2.f * M_PI * 440.f * i / 48000.0);
+      output = dsp.process(input);
+      T_ASSERT(ctx, !std::isnan(output) && !std::isinf(output));
+    }
+
+    T_ASSERT(ctx, dsp.isGateOpen());
+  }
+
+  //------------------------------------------------------------------------------
   // Test Runner
   //------------------------------------------------------------------------------
   void run_all_swv_guitar_collection_tests()
@@ -1050,6 +1184,15 @@ namespace TestSuite
     test_cabsim_dsp_normalization_flag(ctx);
     test_cabsim_dsp_unload_ir(ctx);
     test_cabsim_dsp_invalid_slot(ctx);
+
+    // Overdrive DSP tests
+    test_oversampler_basic(ctx);
+    test_single_knob_noise_gate(ctx);
+    test_soft_clipper_behavior(ctx);
+    test_hard_clipper_limits(ctx);
+    test_tone_stack_extremes(ctx);
+    test_transistor_stages(ctx);
+    test_overdrive_dsp_basic(ctx);
 
     std::printf("\n");
     ctx.summary();

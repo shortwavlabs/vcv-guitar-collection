@@ -8,4 +8,5 @@ void init(Plugin* p) {
 	// Add modules here
 	p->addModel(modelNamPlayer);
 	p->addModel(modelCabSim);
+	p->addModel(modelOverdrive);
 }

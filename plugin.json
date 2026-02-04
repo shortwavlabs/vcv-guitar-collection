@@ -22,6 +22,12 @@
       "name": "Cabinet Simulator",
       "description": "Convolution-based cabinet simulator with dual IR loading, blending, and tone shaping filters",
       "tags": ["Effect", "Equalizer"]
+    },
+    {
+      "slug": "Overdrive",
+      "name": "Overdrive",
+      "description": "Three-model overdrive with noise gate and attack control",
+      "tags": ["Effect", "Distortion"]
     }
   ]
 }
