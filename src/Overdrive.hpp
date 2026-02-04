@@ -54,6 +54,11 @@ private:
 
     dsp::SchmittTrigger bypassTrigger;
     bool isBypassed = false;
+    int cachedModel = -1;
+    int cachedAttack = -1;
+    bool cachedGateOpen = false;
+    bool cachedBypassed = false;
+    bool lightStateInitialized = false;
 };
 
 struct OverdriveWidget : ModuleWidget {

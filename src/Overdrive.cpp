@@ -34,7 +34,10 @@ void Overdrive::process(const ProcessArgs& args) {
     int modelInt = static_cast<int>(std::round(params[MODEL_PARAM].getValue()));
     if (modelInt < 0) modelInt = 0;
     if (modelInt > 2) modelInt = 2;
-    dsp.setModel(static_cast<OverdriveModel>(modelInt));
+    if (modelInt != cachedModel) {
+        dsp.setModel(static_cast<OverdriveModel>(modelInt));
+        cachedModel = modelInt;
+    }
 
     float drive = params[DRIVE_PARAM].getValue();
     if (inputs[DRIVE_CV].isConnected()) {
@@ -66,7 +69,10 @@ void Overdrive::process(const ProcessArgs& args) {
         int cvPos = static_cast<int>(std::round(rescale(cv, 0.f, 10.f, 0.f, 5.f)));
         attack = std::clamp(attack + cvPos, 0, 5);
     }
-    dsp.setAttack(attack);
+    if (attack != cachedAttack) {
+        dsp.setAttack(attack);
+        cachedAttack = attack;
+    }
 
     float gate = params[GATE_PARAM].getValue();
     if (inputs[GATE_CV].isConnected()) {
@@ -91,15 +97,21 @@ void Overdrive::process(const ProcessArgs& args) {
         outputs[AUDIO_OUTPUT].setVoltage(output * 5.f);
     }
 
-    if (bypassed) {
-        lights[GATE_GREEN_LIGHT].setBrightness(0.f);
-        lights[GATE_RED_LIGHT].setBrightness(0.f);
-    } else if (dsp.isGateOpen()) {
-        lights[GATE_GREEN_LIGHT].setBrightness(1.f);
-        lights[GATE_RED_LIGHT].setBrightness(0.f);
-    } else {
-        lights[GATE_GREEN_LIGHT].setBrightness(0.f);
-        lights[GATE_RED_LIGHT].setBrightness(1.f);
+    bool gateOpen = dsp.isGateOpen();
+    if (!lightStateInitialized || gateOpen != cachedGateOpen || bypassed != cachedBypassed) {
+        if (bypassed) {
+            lights[GATE_GREEN_LIGHT].setBrightness(0.f);
+            lights[GATE_RED_LIGHT].setBrightness(0.f);
+        } else if (gateOpen) {
+            lights[GATE_GREEN_LIGHT].setBrightness(1.f);
+            lights[GATE_RED_LIGHT].setBrightness(0.f);
+        } else {
+            lights[GATE_GREEN_LIGHT].setBrightness(0.f);
+            lights[GATE_RED_LIGHT].setBrightness(1.f);
+        }
+        cachedGateOpen = gateOpen;
+        cachedBypassed = bypassed;
+        lightStateInitialized = true;
     }
 }
 
@@ -112,6 +124,11 @@ void Overdrive::onReset(const ResetEvent& e) {
     dsp.reset();
     isBypassed = false;
     bypassTrigger.reset();
+    cachedModel = -1;
+    cachedAttack = -1;
+    cachedGateOpen = false;
+    cachedBypassed = false;
+    lightStateInitialized = false;
 }
 
 json_t* Overdrive::dataToJson() {

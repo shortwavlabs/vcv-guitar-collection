@@ -69,25 +69,29 @@ public:
         float processed[Oversampler::kFactor];
 
         oversampler.upsample(input, upsampled);
-        for (int i = 0; i < Oversampler::kFactor; ++i) {
-            float sample = noiseGate.process(upsampled[i]);
-            switch (currentModel) {
-                case OverdriveModel::TS808:
-                case OverdriveModel::TS9:
+        switch (currentModel) {
+            case OverdriveModel::TS808:
+            case OverdriveModel::TS9:
+                for (int i = 0; i < Oversampler::kFactor; ++i) {
+                    float sample = noiseGate.process(upsampled[i]);
                     sample = inputBuffer.process(sample);
                     sample = softClipper.process(sample);
                     sample = tsTone.process(sample);
                     sample = outputBuffer.process(sample);
-                    break;
-                case OverdriveModel::DS1:
+                    processed[i] = sample;
+                }
+                break;
+            case OverdriveModel::DS1:
+                for (int i = 0; i < Oversampler::kFactor; ++i) {
+                    float sample = noiseGate.process(upsampled[i]);
                     sample = inputBuffer.process(sample);
                     sample = transistorBooster.process(sample);
                     sample = hardClipper.process(sample);
                     sample = dsTone.process(sample);
                     sample = outputBuffer.process(sample);
-                    break;
-            }
-            processed[i] = sample;
+                    processed[i] = sample;
+                }
+                break;
         }
 
         float output = oversampler.downsample(processed);
