@@ -84,11 +84,11 @@ elif [[ "$UNAME_S" == "MINGW"* || "$UNAME_S" == "MSYS"* ]]; then
   # Windows: add Rack SDK to PATH for DLL loading
   export PATH="$(pwd)/dep/Rack-SDK:$PATH"
 fi
-if "$OUT_BIN"; then
-  echo "Tests passed."
-  exit 0
-else
+if ! "$OUT_BIN"; then
   EXIT_CODE=$?
   echo "Tests failed with exit code $EXIT_CODE"
   exit $EXIT_CODE
 fi
+
+echo "Tests passed."
+exit 0

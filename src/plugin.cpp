@@ -9,4 +9,5 @@ void init(Plugin* p) {
 	p->addModel(modelNamPlayer);
 	p->addModel(modelCabSim);
 	p->addModel(modelOverdrive);
+	p->addModel(modelStrobeTuner);
 }

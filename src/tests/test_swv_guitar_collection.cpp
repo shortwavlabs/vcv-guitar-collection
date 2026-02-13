@@ -8,6 +8,7 @@
 #include <vector>
 #include <limits>
 #include <algorithm>
+#include <cstdint>
 #include "../dsp/Nam.h"
 #include "../dsp/IRLoader.h"
 #include "../dsp/CabSimDSP.h"
@@ -19,6 +20,7 @@
 #include "../dsp/ToneStack.h"
 #include "../dsp/TransistorStage.h"
 #include "../dsp/OverdriveDSP.h"
+#include "../dsp/StrobeTunerDSP.h"
 
 namespace TestSuite
 {
@@ -1128,6 +1130,152 @@ namespace TestSuite
   }
 
   //------------------------------------------------------------------------------
+  // Strobe Tuner DSP Tests
+  //------------------------------------------------------------------------------
+  float strobe_next_noise(uint32_t &state)
+  {
+    state = state * 1664525u + 1013904223u;
+    float normalized = static_cast<float>((state >> 8) & 0x00FFFFFF) / static_cast<float>(0x01000000);
+    return normalized * 2.f - 1.f;
+  }
+
+  bool strobe_run_detector_for_tone(
+      StrobeTunerDSP &detector,
+      float frequencyHz,
+      float sampleRate,
+      float seconds,
+      float amplitude,
+      float noiseAmplitude,
+      StrobeTunerDSP::PitchResult &lastValidResult)
+  {
+    int totalSamples = static_cast<int>(sampleRate * seconds);
+    bool sawValid = false;
+    uint32_t rngState = 0x12345678u;
+
+    for (int i = 0; i < totalSamples; ++i)
+    {
+      float phase = 2.f * static_cast<float>(M_PI) * frequencyHz * static_cast<float>(i) / sampleRate;
+      float sample = amplitude * std::sin(phase);
+      if (noiseAmplitude > 0.f)
+      {
+        sample += noiseAmplitude * strobe_next_noise(rngState);
+      }
+
+      StrobeTunerDSP::PitchResult result;
+      if (detector.processSample(sample, result) && result.valid)
+      {
+        sawValid = true;
+        lastValidResult = result;
+      }
+    }
+
+    return sawValid;
+  }
+
+  void test_strobe_tuner_initialization(TestContext &ctx)
+  {
+    std::printf("Testing StrobeTunerDSP initialization...\n");
+
+    StrobeTunerDSP detector;
+    T_ASSERT_NEAR(ctx, static_cast<float>(detector.getSampleRate()), 48000.f, 1.0e-3f);
+    T_ASSERT(ctx, detector.getAnalysisWindowSize() >= 1024);
+    T_ASSERT(ctx, detector.getHopSize() >= 64);
+    T_ASSERT_NEAR(ctx, detector.getConfidenceThreshold(), 0.70f, 1.0e-6f);
+  }
+
+  void test_strobe_tuner_math_helpers(TestContext &ctx)
+  {
+    std::printf("Testing StrobeTunerDSP tuning math helpers...\n");
+
+    T_ASSERT_NEAR(ctx, StrobeTunerDSP::midiToFrequency(69, 440.f), 440.f, 1.0e-5f);
+    T_ASSERT_NEAR(ctx, StrobeTunerDSP::frequencyToMidi(440.f, 440.f), 69.f, 1.0e-5f);
+    T_ASSERT(ctx, StrobeTunerDSP::nearestMidi(440.f, 440.f) == 69);
+    T_ASSERT_NEAR(ctx, StrobeTunerDSP::midiToRackPitchVoltage(60), 0.f, 1.0e-6f);
+
+    float ratio50Cents = std::pow(2.f, 50.f / 1200.f);
+    T_ASSERT_NEAR(ctx, StrobeTunerDSP::centsDifference(440.f * ratio50Cents, 440.f), 50.f, 1.0e-3f);
+  }
+
+  void test_strobe_tuner_silence_rejected(TestContext &ctx)
+  {
+    std::printf("Testing StrobeTunerDSP silence rejection...\n");
+
+    StrobeTunerDSP detector;
+    detector.setSampleRate(48000.0);
+    detector.setMinRms(0.002f);
+    detector.reset();
+
+    bool sawAnalysis = false;
+    bool sawValid = false;
+
+    for (int i = 0; i < 48000; ++i)
+    {
+      StrobeTunerDSP::PitchResult result;
+      if (detector.processSample(0.f, result))
+      {
+        sawAnalysis = true;
+        if (result.valid)
+        {
+          sawValid = true;
+          break;
+        }
+      }
+    }
+
+    T_ASSERT(ctx, sawAnalysis);
+    T_ASSERT(ctx, !sawValid);
+  }
+
+  void test_strobe_tuner_detect_a4(TestContext &ctx)
+  {
+    std::printf("Testing StrobeTunerDSP 440 Hz detection...\n");
+
+    StrobeTunerDSP detector;
+    detector.setSampleRate(48000.0);
+    detector.setSmoothing(0.86f);
+    detector.reset();
+
+    StrobeTunerDSP::PitchResult result;
+    bool sawValid = strobe_run_detector_for_tone(detector, 440.f, 48000.f, 1.6f, 0.55f, 0.f, result);
+    T_ASSERT(ctx, sawValid);
+    T_ASSERT_NEAR(ctx, result.smoothedFrequencyHz, 440.f, 0.9f);
+    T_ASSERT(ctx, result.confidence > 0.70f);
+  }
+
+  void test_strobe_tuner_detect_low_e(TestContext &ctx)
+  {
+    std::printf("Testing StrobeTunerDSP low-E detection...\n");
+
+    StrobeTunerDSP detector;
+    detector.setSampleRate(48000.0);
+    detector.setSmoothing(0.90f);
+    detector.reset();
+
+    constexpr float kLowE2 = 82.4069f;
+    StrobeTunerDSP::PitchResult result;
+    bool sawValid = strobe_run_detector_for_tone(detector, kLowE2, 48000.f, 2.5f, 0.60f, 0.f, result);
+    T_ASSERT(ctx, sawValid);
+    T_ASSERT_NEAR(ctx, result.smoothedFrequencyHz, kLowE2, 1.2f);
+  }
+
+  void test_strobe_tuner_detect_with_noise(TestContext &ctx)
+  {
+    std::printf("Testing StrobeTunerDSP detection with noise...\n");
+
+    StrobeTunerDSP detector;
+    detector.setSampleRate(48000.0);
+    detector.setSmoothing(0.88f);
+    detector.setConfidenceThreshold(0.60f);
+    detector.reset();
+
+    constexpr float kA2 = 110.0f;
+    StrobeTunerDSP::PitchResult result;
+    bool sawValid = strobe_run_detector_for_tone(detector, kA2, 48000.f, 2.0f, 0.55f, 0.03f, result);
+    T_ASSERT(ctx, sawValid);
+    T_ASSERT_NEAR(ctx, result.smoothedFrequencyHz, kA2, 1.8f);
+  }
+
+  //------------------------------------------------------------------------------
   // Test Runner
   //------------------------------------------------------------------------------
   void run_all_swv_guitar_collection_tests()
@@ -1193,6 +1341,14 @@ namespace TestSuite
     test_tone_stack_extremes(ctx);
     test_transistor_stages(ctx);
     test_overdrive_dsp_basic(ctx);
+
+    // Strobe tuner DSP tests
+    test_strobe_tuner_initialization(ctx);
+    test_strobe_tuner_math_helpers(ctx);
+    test_strobe_tuner_silence_rejected(ctx);
+    test_strobe_tuner_detect_a4(ctx);
+    test_strobe_tuner_detect_low_e(ctx);
+    test_strobe_tuner_detect_with_noise(ctx);
 
     std::printf("\n");
     ctx.summary();

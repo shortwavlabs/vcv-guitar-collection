@@ -28,6 +28,12 @@
       "name": "Overdrive",
       "description": "Three-model overdrive with noise gate and attack control",
       "tags": ["Effect", "Distortion"]
+    },
+    {
+      "slug": "StrobeTuner",
+      "name": "Strobe Tuner",
+      "description": "Classic-style strobe tuner with note CV and cents error output",
+      "tags": ["Utility"]
     }
   ]
 }

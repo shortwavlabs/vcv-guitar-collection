@@ -10,3 +10,4 @@ extern Plugin* pluginInstance;
 extern Model* modelNamPlayer;
 extern Model* modelCabSim;
 extern Model* modelOverdrive;
+extern Model* modelStrobeTuner;
