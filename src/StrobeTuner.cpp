@@ -201,38 +201,66 @@ void StrobeTunerDisplay::draw(const DrawArgs& args) {
 void StrobeTunerDisplay::drawBackground(const DrawArgs& args) {
     const float w = box.size.x;
     const float h = box.size.y;
+    const float cx = w * 0.5f;
+    const float cy = h * 0.62f;
+    const float outerRadius = std::min(w, h) * 0.47f;
+    const float innerRadius = outerRadius - 24.f;
 
     nvgBeginPath(args.vg);
     nvgRoundedRect(args.vg, 0.f, 0.f, w, h, 4.f);
-    nvgFillColor(args.vg, nvgRGB(12, 15, 12));
+    nvgFillColor(args.vg, nvgRGB(10, 10, 10));
+    nvgFill(args.vg);
+
+    NVGpaint glass = nvgLinearGradient(
+        args.vg,
+        0.f, 0.f,
+        0.f, h,
+        nvgRGBA(74, 30, 14, 255),
+        nvgRGBA(30, 11, 8, 255));
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 1.0f, 1.0f, w - 2.f, h - 2.f, 4.f);
+    nvgFillPaint(args.vg, glass);
+    nvgFill(args.vg);
+
+    NVGpaint vignette = nvgRadialGradient(
+        args.vg,
+        cx, cy,
+        innerRadius * 0.2f, outerRadius * 1.2f,
+        nvgRGBA(255, 150, 90, 20),
+        nvgRGBA(0, 0, 0, 140));
+    nvgBeginPath(args.vg);
+    nvgRect(args.vg, 0.f, 0.f, w, h);
+    nvgFillPaint(args.vg, vignette);
     nvgFill(args.vg);
 
     nvgBeginPath(args.vg);
     nvgRoundedRect(args.vg, 0.5f, 0.5f, w - 1.f, h - 1.f, 4.f);
-    nvgStrokeWidth(args.vg, 1.0f);
-    nvgStrokeColor(args.vg, nvgRGBA(65, 82, 65, 220));
+    nvgStrokeWidth(args.vg, 1.1f);
+    nvgStrokeColor(args.vg, nvgRGBA(124, 78, 50, 230));
     nvgStroke(args.vg);
 
-    const float centerX = w * 0.5f;
+    // Arc guides for circular strobe wheel.
     nvgBeginPath(args.vg);
-    nvgMoveTo(args.vg, centerX, 26.f);
-    nvgLineTo(args.vg, centerX, h - 24.f);
-    nvgStrokeColor(args.vg, nvgRGBA(220, 230, 190, 90));
-    nvgStrokeWidth(args.vg, 1.f);
+    nvgArc(args.vg, cx, cy, outerRadius, -2.85f, -0.29f, NVG_CW);
+    nvgArc(args.vg, cx, cy, innerRadius, -0.29f, -2.85f, NVG_CCW);
+    nvgClosePath(args.vg);
+    nvgStrokeColor(args.vg, nvgRGBA(210, 130, 84, 80));
+    nvgStrokeWidth(args.vg, 0.9f);
     nvgStroke(args.vg);
 
-    for (int i = 1; i < 6; ++i) {
-        const float xLeft = centerX - i * 14.f;
-        const float xRight = centerX + i * 14.f;
-        const float tickHeight = (i % 2 == 0) ? 8.f : 5.f;
+    for (int i = 0; i < 11; ++i) {
+        const float t = static_cast<float>(i) / 10.f;
+        const float theta = -2.75f + t * 2.35f;
+        const float x0 = cx + std::cos(theta) * (innerRadius - 1.f);
+        const float y0 = cy + std::sin(theta) * (innerRadius - 1.f);
+        const float x1 = cx + std::cos(theta) * (outerRadius + 1.f);
+        const float y1 = cy + std::sin(theta) * (outerRadius + 1.f);
 
         nvgBeginPath(args.vg);
-        nvgMoveTo(args.vg, xLeft, 26.f);
-        nvgLineTo(args.vg, xLeft, 26.f + tickHeight);
-        nvgMoveTo(args.vg, xRight, 26.f);
-        nvgLineTo(args.vg, xRight, 26.f + tickHeight);
-        nvgStrokeColor(args.vg, nvgRGBA(160, 170, 140, 90));
-        nvgStrokeWidth(args.vg, 1.f);
+        nvgMoveTo(args.vg, x0, y0);
+        nvgLineTo(args.vg, x1, y1);
+        nvgStrokeColor(args.vg, nvgRGBA(225, 160, 112, (i % 2 == 0) ? 95 : 62));
+        nvgStrokeWidth(args.vg, (i % 2 == 0) ? 1.0f : 0.7f);
         nvgStroke(args.vg);
     }
 }
@@ -248,39 +276,64 @@ void StrobeTunerDisplay::drawStripes(const DrawArgs& args) {
     const float confidence = std::clamp(module->uiConfidence.load(std::memory_order_relaxed), 0.f, 1.f);
 
     const float w = box.size.x;
-    const float strobeTop = 28.f;
-    const float strobeBottom = box.size.y - 28.f;
-    const float strobeHeight = strobeBottom - strobeTop;
-
-    nvgSave(args.vg);
-    nvgScissor(args.vg, 2.f, strobeTop, w - 4.f, strobeHeight);
-
-    const float stripePitch = 12.f;
-    const float stripeWidth = 4.5f;
-    const float offset = phaseCycles * stripePitch;
+    const float h = box.size.y;
+    const float cx = w * 0.5f;
+    const float cy = h * 0.62f;
+    const float ringRadius = std::min(w, h) * 0.43f;
     const float absCents = std::fabs(cents);
     const bool locked = valid && absCents <= kStrobeLockCents;
+    const float spinAngle = phaseCycles * 2.f * static_cast<float>(M_PI);
 
-    const int baseR = locked ? 95 : 240;
-    const int baseG = locked ? 250 : 210;
-    const int baseB = locked ? 110 : 105;
-    const int alpha = valid ? static_cast<int>(80 + confidence * 140.f) : 35;
+    nvgSave(args.vg);
+    nvgScissor(args.vg, 2.f, 18.f, w - 4.f, h - 44.f);
 
-    for (float x = -stripePitch; x < w + stripePitch; x += stripePitch) {
+    const int padCount = 18;
+    const int barsPerPad = 7;
+    const float padWidth = 18.f;
+    const float padHeight = 20.f;
+    const float baseAlpha = valid ? (90.f + 135.f * confidence) : 28.f;
+    const int baseR = locked ? 160 : 255;
+    const int baseG = locked ? 255 : 178;
+    const int baseB = locked ? 132 : 95;
+    const float startAngle = -2.95f;
+    const float sweepAngle = 2.70f;
+
+    for (int i = 0; i < padCount; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(padCount - 1);
+        const float theta = startAngle + t * sweepAngle + spinAngle;
+        const float x = cx + std::cos(theta) * ringRadius;
+        const float y = cy + std::sin(theta) * ringRadius;
+
+        nvgSave(args.vg);
+        nvgTranslate(args.vg, x, y);
+        nvgRotate(args.vg, theta + static_cast<float>(M_PI) * 0.5f);
+
         nvgBeginPath(args.vg);
-        nvgRect(args.vg, x + offset, strobeTop, stripeWidth, strobeHeight);
-        nvgFillColor(args.vg, nvgRGBA(baseR, baseG, baseB, alpha));
+        nvgRoundedRect(args.vg, -padWidth * 0.5f, -padHeight * 0.5f, padWidth, padHeight, 1.8f);
+        nvgFillColor(args.vg, nvgRGBA(52, 24, 14, static_cast<unsigned char>(baseAlpha * 0.35f)));
         nvgFill(args.vg);
+
+        for (int b = 0; b < barsPerPad; ++b) {
+            const float barT = static_cast<float>(b) / static_cast<float>(barsPerPad - 1);
+            const float barX = -padWidth * 0.5f + 1.5f + barT * (padWidth - 3.0f);
+            const float barAlpha = baseAlpha * (0.55f + 0.45f * std::sin(spinAngle * 1.8f + i * 0.32f + b * 0.41f));
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, barX, -padHeight * 0.42f, 1.0f, padHeight * 0.84f);
+            nvgFillColor(args.vg, nvgRGBA(baseR, baseG, baseB, static_cast<unsigned char>(std::clamp(barAlpha, 0.f, 255.f))));
+            nvgFill(args.vg);
+        }
+
+        nvgRestore(args.vg);
     }
 
     NVGpaint edgeShade = nvgLinearGradient(
         args.vg,
-        0.f, strobeTop,
-        0.f, strobeBottom,
-        nvgRGBA(0, 0, 0, 130),
-        nvgRGBA(0, 0, 0, 40));
+        0.f, 18.f,
+        0.f, h - 24.f,
+        nvgRGBA(0, 0, 0, 120),
+        nvgRGBA(0, 0, 0, 30));
     nvgBeginPath(args.vg);
-    nvgRect(args.vg, 0.f, strobeTop, w, strobeHeight);
+    nvgRect(args.vg, 0.f, 18.f, w, h - 42.f);
     nvgFillPaint(args.vg, edgeShade);
     nvgFill(args.vg);
 
@@ -290,6 +343,7 @@ void StrobeTunerDisplay::drawStripes(const DrawArgs& args) {
 
 void StrobeTunerDisplay::drawReadout(const DrawArgs& args) {
     const float w = box.size.x;
+    const float h = box.size.y;
 
     std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
     if (!font) {
@@ -301,19 +355,23 @@ void StrobeTunerDisplay::drawReadout(const DrawArgs& args) {
 
     bool valid = false;
     float cents = 0.f;
+    float confidence = 0.f;
     float frequency = 0.f;
     int midi = 69;
     if (module) {
         valid = module->uiPitchValid.load(std::memory_order_relaxed);
         cents = module->uiCents.load(std::memory_order_relaxed);
+        confidence = module->uiConfidence.load(std::memory_order_relaxed);
         frequency = module->uiFrequencyHz.load(std::memory_order_relaxed);
         midi = module->uiMidiNote.load(std::memory_order_relaxed);
     }
 
-    nvgFontSize(args.vg, 23.f);
-    nvgFillColor(args.vg, valid ? nvgRGB(235, 245, 220) : nvgRGB(130, 140, 120));
+    const float noteY = h * 0.62f;
+
+    nvgFontSize(args.vg, 42.f);
+    nvgFillColor(args.vg, valid ? nvgRGB(245, 178, 122) : nvgRGB(145, 110, 90));
     std::string noteText = valid ? formatMidiNote(midi) : "--";
-    nvgText(args.vg, w * 0.5f, 14.f, noteText.c_str(), nullptr);
+    nvgText(args.vg, w * 0.5f, noteY, noteText.c_str(), nullptr);
 
     char centsText[32];
     if (valid) {
@@ -322,8 +380,8 @@ void StrobeTunerDisplay::drawReadout(const DrawArgs& args) {
         std::snprintf(centsText, sizeof(centsText), "--.- c");
     }
     nvgFontSize(args.vg, 14.f);
-    nvgFillColor(args.vg, nvgRGB(190, 205, 170));
-    nvgText(args.vg, w * 0.5f, box.size.y - 13.f, centsText, nullptr);
+    nvgFillColor(args.vg, nvgRGB(225, 170, 130));
+    nvgText(args.vg, w * 0.5f, noteY + 28.f, centsText, nullptr);
 
     char freqText[32];
     if (valid) {
@@ -332,8 +390,33 @@ void StrobeTunerDisplay::drawReadout(const DrawArgs& args) {
         std::snprintf(freqText, sizeof(freqText), "--.-- Hz");
     }
     nvgFontSize(args.vg, 12.f);
-    nvgFillColor(args.vg, nvgRGB(145, 160, 125));
-    nvgText(args.vg, w * 0.5f, box.size.y - 28.f, freqText, nullptr);
+    nvgFillColor(args.vg, nvgRGB(170, 125, 95));
+    nvgText(args.vg, w * 0.5f, h - 14.f, freqText, nullptr);
+
+    // Small confidence meter (left-bottom), inspired by clip-on hardware indicators.
+    const float meterX = 10.f;
+    const float meterY = h - 21.f;
+    const float meterW = 23.f;
+    const float meterH = 8.f;
+
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, meterX, meterY, meterW, meterH, 1.5f);
+    nvgStrokeColor(args.vg, nvgRGBA(210, 150, 110, 190));
+    nvgStrokeWidth(args.vg, 0.9f);
+    nvgStroke(args.vg);
+
+    int bars = static_cast<int>(std::round(std::clamp(confidence, 0.f, 1.f) * 4.f));
+    for (int i = 0; i < 4; ++i) {
+        const float bx = meterX + 2.f + i * 5.f;
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, bx, meterY + 1.8f, 3.4f, meterH - 3.6f);
+        if (i < bars && valid) {
+            nvgFillColor(args.vg, nvgRGBA(246, 178, 122, 205));
+        } else {
+            nvgFillColor(args.vg, nvgRGBA(92, 56, 40, 165));
+        }
+        nvgFill(args.vg);
+    }
 }
 
 Model* modelStrobeTuner = createModel<StrobeTuner, StrobeTunerWidget>("StrobeTuner");
