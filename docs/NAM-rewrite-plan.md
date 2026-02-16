@@ -21,7 +21,7 @@ This document outlines a comprehensive plan to rewrite the NeuralAmpModelerCore 
 | Dependency | Version | Purpose | C++11 Compatible | Action |
 |------------|---------|---------|------------------|--------|
 | Eigen | 3.3+ | Matrix operations | Yes | **Remove** - use custom + Rack SIMD |
-| nlohmann/json | single-header | JSON parsing | Yes | **Remove** - implement minimal JSON parser |
+| nlohmann/json | single-header | JSON parsing | Yes | **Remove** - use Jansson from Rack SDK |
 | std::filesystem | C++17 | File path handling | **No** | **Replace** with `rack::system` |
 
 **Goal**: Zero external dependencies except VCV Rack SDK.
@@ -288,56 +288,71 @@ int clampedInt = rack::math::clamp(intValue, minInt, maxInt);
 | `std::clamp` | C++17 | Yes | **Use `rack::math::clamp`** |
 | `std::filesystem` | C++17 | Yes | **Use `rack::system`** |
 
-#### 2.4 Minimal JSON Parser
+#### 2.4 JSON Parsing - Use Jansson from Rack SDK
 
-Replace nlohmann/json with a minimal JSON parser that only handles what NAM needs:
+**No custom implementation needed!** The Rack SDK includes **Jansson** (v2.12), a mature C JSON library.
 
+**Location**: `dep/Rack-SDK/dep/include/jansson.h`
+
+**Usage example for .nam files**:
 ```cpp
-// nam_json.h - Minimal JSON parser for .nam files
-namespace nam {
-namespace json {
+#include <jansson.h>
 
-class Value {
-public:
-    enum Type { Null, Bool, Number, String, Array, Object };
+// Load .nam file
+json_error_t error;
+json_t* root = json_load_file(model_path.c_str(), 0, &error);
+if (!root) {
+    // Handle error: error.text, error.line
+}
 
-    // Parse from string
-    static Value parse(const std::string& str);
+// Get architecture
+json_t* arch = json_object_get(root, "architecture");
+const char* arch_str = json_string_value(arch);  // "WaveNet", "ConvNet", etc.
 
-    // Type queries
-    bool is_null() const;
-    bool is_number() const;
-    bool is_string() const;
-    bool is_array() const;
-    bool is_object() const;
+// Get nested config
+json_t* config = json_object_get(root, "config");
+json_t* channels = json_object_get(config, "channels");
+int num_channels = json_integer_value(channels);
 
-    // Accessors
-    double as_double() const;
-    float as_float() const;
-    int as_int() const;
-    std::string as_string() const;
+// Get dilations array
+json_t* dilations = json_object_get(config, "dilations");
+size_t num_dilations = json_array_size(dilations);
+for (size_t i = 0; i < num_dilations; i++) {
+    int d = json_integer_value(json_array_get(dilations, i));
+}
 
-    // Array access
-    size_t size() const;
-    Value operator[](size_t index) const;
+// Get weights (large float arrays)
+json_t* weights = json_object_get(root, "weights");
+json_t* input_weight = json_object_get(weights, "_input_layer.weight");
+size_t weight_size = json_array_size(input_weight);
+std::vector<float> weight_vec(weight_size);
+for (size_t i = 0; i < weight_size; i++) {
+    weight_vec[i] = json_number_value(json_array_get(input_weight, i));
+}
 
-    // Object access
-    Value operator[](const std::string& key) const;
-    bool has(const std::string& key) const;
-
-    // Array to vector<float> (for weights)
-    std::vector<float> as_float_array() const;
-};
-
-} // namespace json
-} // namespace nam
+// Cleanup (reference counting)
+json_decref(root);
 ```
 
-**Implementation approach**:
-- Single-pass recursive descent parser
-- No allocations during access (parse once, use directly)
-- Only supports types needed by NAM: numbers, strings, arrays, objects
-- ~300-500 lines of code vs nlohmann/json's ~20k lines
+**Key Jansson functions**:
+| Function | Purpose |
+|----------|---------|
+| `json_load_file()` | Parse JSON from file |
+| `json_loads()` | Parse JSON from string |
+| `json_object_get()` | Get value by key |
+| `json_array_get()` | Get array element by index |
+| `json_array_size()` | Get array length |
+| `json_string_value()` | Get string value |
+| `json_integer_value()` | Get integer value |
+| `json_number_value()` | Get float/double value |
+| `json_is_object()`, `json_is_array()`, etc. | Type checking |
+| `json_decref()` | Decrement refcount (cleanup) |
+
+**Benefits**:
+- Zero implementation work
+- Well-tested, production-ready library
+- C++11 compatible (C library)
+- Already linked in Rack SDK
 
 ### Phase 3: Architecture Reimplementation
 
@@ -591,7 +606,6 @@ src/dsp/nam/
 ├── ring_buffer.h          # Ring buffer for temporal processing
 ├── ring_buffer.cpp
 ├── activations.h          # Activation functions (header-only)
-├── json.h                 # Minimal JSON parser (header-only)
 ├── conv1d.h               # 1D convolution layer
 ├── conv1d.cpp
 ├── conv1x1.h              # 1x1 convolution layer
@@ -604,7 +618,7 @@ src/dsp/nam/
 ├── lstm.cpp
 ├── wavenet.h              # WaveNet architecture
 ├── wavenet.cpp
-├── model_loader.h         # Model loading from JSON
+├── model_loader.h         # Model loading from JSON (uses Jansson)
 └── model_loader.cpp
 ```
 
@@ -628,8 +642,17 @@ We leverage these Rack SDK components (no implementation needed):
 | `matrix.h` | Custom matrix ops for NAM's specific access patterns |
 | `ring_buffer.h/cpp` | Custom ring buffer for dilated convolution lookback |
 | `activations.h` | Fast approximations + Rack SIMD integration |
-| `json.h` | Minimal JSON parser (NAM-specific needs) |
 | Neural net layers | Conv1D, Conv1x1, LSTM cells, WaveNet layers |
+
+### What We Get From Rack SDK (No Implementation Needed)
+
+| Component | Source |
+|-----------|--------|
+| JSON parsing | Jansson library (`dep/jansson.h`) |
+| Math utilities | `rack::math::clamp()`, `rescale()`, etc. |
+| SIMD support | `rack::simd::float_4` and math functions |
+| File system | `rack::system::isFile()`, `readFile()`, etc. |
+| Sample rate conversion | `rack::dsp::SampleRateConverter` |
 
 ---
 
@@ -649,13 +672,7 @@ We leverage these Rack SDK components (no implementation needed):
    - Rewind logic for dilated convolution
    - Consider using `rack::dsp::DoubleRingBuffer` as reference
 
-3. **json.h** - Minimal JSON parser (header-only)
-   - Recursive descent parser
-   - Only types needed by NAM (string, number, array, object)
-   - Float array extraction for weights
-   - Use `rack::system::readFile()` for file loading
-
-4. **activations.h** - Activation functions (header-only)
+3. **activations.h** - Activation functions (header-only)
    - Port existing fast approximations
    - Integrate with `rack::simd` for SIMD versions
    - `fast_tanh`, `fast_sigmoid`, etc.
@@ -695,7 +712,7 @@ We leverage these Rack SDK components (no implementation needed):
 ### Stage 4: Integration
 
 11. **model_loader.h/cpp** - Model loading
-    - JSON parsing with custom parser
+    - JSON parsing with Jansson (from Rack SDK)
     - Factory pattern
     - Version checking
     - Use `rack::system` for file operations
@@ -1104,26 +1121,30 @@ void test_ring_buffer(TestContext& ctx) {
 }
 ```
 
-#### 3. JSON Parser (`test_json_parser`)
+#### 3. JSON Parsing with Jansson (`test_json_parser`)
 
 ```cpp
+#include <jansson.h>
+
 void test_json_parser(TestContext& ctx) {
     ctx.current_test = "json_parser";
 
-    // Test 3.1: Simple object
+    // Test 3.1: Simple object with Jansson
     {
         const char* json = R"({"name": "test", "value": 42, "active": true})";
-        nam::json::Value v = nam::json::Value::parse(json);
+        json_error_t error;
+        json_t* root = json_loads(json, 0, &error);
+        ctx.assertTrue(root != nullptr, "JSON parse success");
 
-        ctx.assertTrue(v.has("name"), "JSON has key 'name'");
-        ctx.assertTrue(v["name"].is_string(), "JSON 'name' is string");
-        ctx.assertTrue(v["name"].as_string() == "test", "JSON 'name' value");
+        json_t* name = json_object_get(root, "name");
+        ctx.assertTrue(json_is_string(name), "JSON 'name' is string");
+        ctx.assertTrue(std::string(json_string_value(name)) == "test", "JSON 'name' value");
 
-        ctx.assertTrue(v["value"].is_number(), "JSON 'value' is number");
-        ctx.assertNear(v["value"].as_float(), 42.f, "JSON 'value' value");
-        ctx.assertTrue(v["value"].as_int() == 42, "JSON 'value' as int");
+        json_t* value = json_object_get(root, "value");
+        ctx.assertTrue(json_is_integer(value), "JSON 'value' is integer");
+        ctx.assertTrue(json_integer_value(value) == 42, "JSON 'value' value");
 
-        ctx.assertTrue(v["active"].as_bool() == true, "JSON 'active' bool");
+        json_decref(root);
     }
 
     // Test 3.2: Nested objects
@@ -1134,33 +1155,45 @@ void test_json_parser(TestContext& ctx) {
                 "kernel_size": 3
             }
         })";
-        nam::json::Value v = nam::json::Value::parse(json);
+        json_error_t error;
+        json_t* root = json_loads(json, 0, &error);
 
-        ctx.assertTrue(v.has("config"), "JSON has nested object");
-        ctx.assertTrue(v["config"].is_object(), "JSON nested is object");
-        ctx.assertNear(v["config"]["channels"].as_float(), 16.f, "Nested value");
+        json_t* config = json_object_get(root, "config");
+        ctx.assertTrue(json_is_object(config), "JSON nested is object");
+
+        json_t* channels = json_object_get(config, "channels");
+        ctx.assertNear((float)json_integer_value(channels), 16.f, "Nested value");
+
+        json_decref(root);
     }
 
     // Test 3.3: Arrays
     {
         const char* json = R"({"dilations": [1, 2, 4, 8, 16, 32, 64]})";
-        nam::json::Value v = nam::json::Value::parse(json);
+        json_error_t error;
+        json_t* root = json_loads(json, 0, &error);
 
-        ctx.assertTrue(v["dilations"].is_array(), "JSON array type");
-        ctx.assertTrue(v["dilations"].size() == 7, "JSON array size");
-        ctx.assertTrue(v["dilations"][0].as_int() == 1, "JSON array [0]");
-        ctx.assertTrue(v["dilations"][6].as_int() == 64, "JSON array [6]");
+        json_t* dilations = json_object_get(root, "dilations");
+        ctx.assertTrue(json_is_array(dilations), "JSON array type");
+        ctx.assertTrue(json_array_size(dilations) == 7, "JSON array size");
+        ctx.assertTrue(json_integer_value(json_array_get(dilations, 0)) == 1, "JSON array [0]");
+        ctx.assertTrue(json_integer_value(json_array_get(dilations, 6)) == 64, "JSON array [6]");
+
+        json_decref(root);
     }
 
     // Test 3.4: Float arrays (weight loading)
     {
         const char* json = R"({"weights": [0.1, 0.2, 0.3, -0.4, 0.5]})";
-        nam::json::Value v = nam::json::Value::parse(json);
+        json_error_t error;
+        json_t* root = json_loads(json, 0, &error);
 
-        std::vector<float> arr = v["weights"].as_float_array();
-        ctx.assertTrue(arr.size() == 5, "Float array size");
-        ctx.assertNear(arr[0], 0.1f, "Float array [0]");
-        ctx.assertNear(arr[3], -0.4f, "Float array [3]");
+        json_t* weights = json_object_get(root, "weights");
+        ctx.assertTrue(json_array_size(weights) == 5, "Float array size");
+        ctx.assertNear((float)json_number_value(json_array_get(weights, 0)), 0.1f, "Float array [0]");
+        ctx.assertNear((float)json_number_value(json_array_get(weights, 3)), -0.4f, "Float array [3]");
+
+        json_decref(root);
     }
 
     // Test 3.5: Parse actual .nam file structure
@@ -1180,12 +1213,24 @@ void test_json_parser(TestContext& ctx) {
                 "loudness": -20.5
             }
         })";
-        nam::json::Value v = nam::json::Value::parse(json);
+        json_error_t error;
+        json_t* root = json_loads(json, 0, &error);
 
-        ctx.assertTrue(v["architecture"].as_string() == "WaveNet", "Architecture parse");
-        ctx.assertNear(v["config"]["head_size"].as_float(), 8.f, "Config nested parse");
-        ctx.assertNear(v["sample_rate"].as_float(), 48000.f, "Sample rate parse");
-        ctx.assertNear(v["metadata"]["loudness"].as_float(), -20.5f, "Metadata nested parse");
+        json_t* arch = json_object_get(root, "architecture");
+        ctx.assertTrue(std::string(json_string_value(arch)) == "WaveNet", "Architecture parse");
+
+        json_t* config = json_object_get(root, "config");
+        json_t* head_size = json_object_get(config, "head_size");
+        ctx.assertNear((float)json_integer_value(head_size), 8.f, "Config nested parse");
+
+        json_t* sample_rate = json_object_get(root, "sample_rate");
+        ctx.assertNear((float)json_integer_value(sample_rate), 48000.f, "Sample rate parse");
+
+        json_t* metadata = json_object_get(root, "metadata");
+        json_t* loudness = json_object_get(metadata, "loudness");
+        ctx.assertNear((float)json_number_value(loudness), -20.5f, "Metadata nested parse");
+
+        json_decref(root);
     }
 }
 ```
@@ -1825,7 +1870,7 @@ git rm -f dep/NeuralAmpModelerCore
 ```
 swv-guitar-collection/
 ├── dep/
-│   └── Rack-SDK/          # Keep - VCV Rack SDK
+│   └── Rack-SDK/          # Keep - VCV Rack SDK (includes Jansson for JSON)
 ├── src/
 │   ├── dsp/
 │   │   ├── nam/           # NEW - Rewritten NAM implementation
@@ -1835,7 +1880,6 @@ swv-guitar-collection/
 │   │   │   ├── ring_buffer.h
 │   │   │   ├── ring_buffer.cpp
 │   │   │   ├── activations.h
-│   │   │   ├── json.h
 │   │   │   ├── conv1d.h
 │   │   │   ├── conv1d.cpp
 │   │   │   ├── conv1x1.h
@@ -2028,16 +2072,17 @@ The minimal JSON parser must handle this structure:
 1. ~~Review and approve this plan~~ ✓
 2. Create feature branch for rewrite
 3. Implement Stage 1 (Foundation)
-   - matrix.h, vector.h, ring_buffer
-   - json.h (minimal parser)
+   - matrix.h, ring_buffer
    - activations.h
+   - (JSON parsing via Jansson - no implementation needed)
 4. Test with sample models from res/models
 5. Implement Stage 2 (Layers)
    - conv1d, conv1x1
 6. Implement Stage 3 (Architectures)
    - linear, convnet, lstm, wavenet
 7. Implement Stage 4 (Integration)
-   - model_loader, nam_dsp
+   - model_loader (uses Jansson for JSON)
+   - nam_dsp
    - Update Nam.h to use new implementation
 8. Performance testing - verify 10% CPU target
 9. Load test all 200+ models in res/models
