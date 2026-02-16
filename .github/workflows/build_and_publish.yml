@@ -8,24 +8,8 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.platform_name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            platform_name: lin-x64
-            sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-lin-x64.zip
-          - os: windows-latest
-            platform_name: win-x64
-            sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-win-x64.zip
-          - os: macos-latest
-            platform_name: mac-arm64
-            sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-mac-arm64.zip
-          - os: macos-15-intel
-            platform_name: mac-x64
-            sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-mac-x64.zip
+    name: Build with rack-plugin-toolchain v2
+    runs-on: ubuntu-latest
 
     defaults:
       run:
@@ -37,78 +21,38 @@ jobs:
           submodules: recursive
 
       # ------------------------------------------------------------------------
-      # Setup Dependencies (Linux)
+      # Setup Dependencies
       # ------------------------------------------------------------------------
-      - name: Install Dependencies (Linux)
-        if: runner.os == 'Linux'
+      - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev jq zstd libjack-jackd2-dev libpulse-dev
+          sudo apt-get install -y jq zstd
 
       # ------------------------------------------------------------------------
-      # Setup Dependencies (Mac)
+      # Checkout rack-plugin-toolchain
       # ------------------------------------------------------------------------
-      - name: Install Dependencies (Mac)
-        if: runner.os == 'macOS'
-        run: |
-          brew install jq zstd
-
-      # ------------------------------------------------------------------------
-      # Setup Dependencies (Windows)
-      # ------------------------------------------------------------------------
-      - name: Setup MSYS2 (Windows)
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
+      - name: Checkout rack-plugin-toolchain (v2)
+        uses: actions/checkout@v4
         with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            git
-            make
-            unzip
-            zip
-            jq
-            zstd
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-zstd
+          repository: shortwavlabs/rack-plugin-toolchain
+          ref: v2
+          path: rack-plugin-toolchain
 
       # ------------------------------------------------------------------------
-      # Download and Setup SDK
+      # Download Rack SDK for tests
       # ------------------------------------------------------------------------
-      - name: Setup Rack SDK
-        shell: bash
+      - name: Setup Rack SDK (test runtime)
         run: |
-          echo "Downloading SDK from ${{ matrix.sdk_url }}"
-          curl -L -o Rack-SDK.zip "${{ matrix.sdk_url }}"
+          echo "Downloading Rack SDK for tests"
+          curl -L -o Rack-SDK.zip "https://vcvrack.com/downloads/Rack-SDK-latest-lin-x64.zip"
           unzip -q Rack-SDK.zip
-          # SDK unzips to a folder like "Rack-SDK". Move it to dep/Rack-SDK where tests expect it
           if [ -d "Rack-SDK" ]; then
             mv "Rack-SDK" dep/Rack-SDK
           else
-            # Find the directory it unzipped to (e.g. Rack-SDK-2.x.x)
             SDK_DIR=$(ls -d Rack-SDK* | head -n 1)
             mv "$SDK_DIR" dep/Rack-SDK
           fi
           echo "RACK_DIR=$(pwd)/dep/Rack-SDK" >> $GITHUB_ENV
-          
-      # ------------------------------------------------------------------------
-      # Download Rack Runtime (Windows only - for tests)
-      # ------------------------------------------------------------------------
-      - name: Download Rack Runtime (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          echo "Downloading VCV Rack installer for Windows to get runtime DLL..."
-          curl -L -o RackFree.exe "https://vcvrack.com/downloads/RackFree-latest-win-x64.exe"
-          # Use 7zip to extract the installer
-          7z x RackFree.exe -o"RackExtracted" -y
-          # Copy runtime DLLs to SDK location for tests
-          cp RackExtracted/libRack.dll dep/Rack-SDK/ || echo "Failed to copy libRack.dll"
-          cp RackExtracted/libgcc_s_seh-1.dll dep/Rack-SDK/ || echo "Failed to copy libgcc_s_seh-1.dll"
-          cp RackExtracted/libstdc++-6.dll dep/Rack-SDK/ || echo "Failed to copy libstdc++-6.dll"
-          cp RackExtracted/libwinpthread-1.dll dep/Rack-SDK/ || echo "Failed to copy libwinpthread-1.dll"
-          echo "DLLs copied to SDK:"
-          ls -la dep/Rack-SDK/*.dll
 
       # ------------------------------------------------------------------------
       # Run Tests
@@ -120,30 +64,26 @@ jobs:
           ./run_tests_with_coverage.sh
 
       # ------------------------------------------------------------------------
-      # Build Plugin (Linux/Mac)
+      # Download macOS SDK tarball for toolchain build
       # ------------------------------------------------------------------------
-      - name: Build Plugin (Linux/Mac)
-        if: runner.os != 'Windows'
+      - name: Download macOS SDK 12.3 archive
+        env:
+          MACOS_SDK_12_3_URL: ${{ secrets.MACOS_SDK_12_3_URL }}
         run: |
-          make dep
-          make dist
+          if [ -z "$MACOS_SDK_12_3_URL" ]; then
+            echo "Missing required secret: MACOS_SDK_12_3_URL"
+            echo "Set this to a downloadable URL for MacOSX12.3.sdk.tar.xz"
+            exit 1
+          fi
+          curl -L "$MACOS_SDK_12_3_URL" -o rack-plugin-toolchain/MacOSX12.3.sdk.tar.xz
 
       # ------------------------------------------------------------------------
-      # Build Plugin (Windows)
+      # Build Plugin with rack-plugin-toolchain v2
       # ------------------------------------------------------------------------
-      - name: Build Plugin (Windows)
-        if: runner.os == 'Windows'
-        shell: msys2 {0}
+      - name: Build Plugin
         run: |
-          # Set RACK_DIR using MSYS2 path format
-          export RACK_DIR="$(cygpath -u "$GITHUB_WORKSPACE")/dep/Rack-SDK"
-          echo "RACK_DIR=$RACK_DIR"
-          # Check what SDK thinks the OS is
-          echo "Checking arch detection..."
-          uname -s
-          make dep
-          # Force Windows architecture detection by overriding RACK_OS
-          make dist RACK_OS=win
+          make -C rack-plugin-toolchain JOBS="$(nproc)" docker-build
+          make -C rack-plugin-toolchain -j"$(nproc)" docker-plugin-build PLUGIN_DIR="$GITHUB_WORKSPACE"
 
       # ------------------------------------------------------------------------
       # Upload Artifacts
@@ -151,5 +91,5 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: guitar-collection-plugin-${{ matrix.platform_name }}
-          path: dist/*.vcvplugin
+          name: guitar-collection-plugin-all-platforms
+          path: rack-plugin-toolchain/plugin-build/*.vcvplugin
