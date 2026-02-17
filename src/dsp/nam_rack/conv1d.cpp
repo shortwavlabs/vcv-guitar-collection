@@ -97,10 +97,6 @@ void Conv1D::setMaxBufferSize(int maxBufferSize) {
     // Pre-allocate output matrix
     _output.resize(out_channels, maxBufferSize);
     _output.setZero();
-
-    // Pre-allocate reusable processing buffers
-    _inputBlock.resize(in_channels, maxBufferSize);
-    _inputBlock.setZero();
 }
 
 void Conv1D::process(const Matrix& input, int num_frames) {
@@ -114,35 +110,60 @@ void Conv1D::process(const Matrix& input, int num_frames) {
         }
     }
 
+    const long write_pos = _inputBuffer.getWritePos();
+    const long out_channels = getOutChannels();
+    const long in_channels = getInChannels();
+
     if (_numGroups == 1) {
         // Standard convolution (no grouping)
         for (size_t k = 0; k < _weight.size(); k++) {
-            // Calculate lookback for this kernel position
-            // offset = dilation * (k + 1 - kernel_size) is negative (looking back)
-            // lookback = -offset is positive
             const long offset = _dilation * (static_cast<long>(k) + 1 - static_cast<long>(_weight.size()));
             const long lookback = -offset;
+            const long read_pos = write_pos - lookback;
 
-            // Read from ring buffer with lookback
-            _inputBuffer.read(_inputBlock, num_frames, lookback);
+            for (int f = 0; f < num_frames; f++) {
+                const float* in_col = _inputBuffer.getCol(static_cast<int>(read_pos + f));
+                float* out_col = _output.col(f);
 
-            // Matrix multiply: output += weight[k] * input_block
-            // weight[k] is (out_channels x in_channels)
-            // input_block is (in_channels x num_frames)
-            // result is (out_channels x num_frames)
-            for (int c = 0; c < _output.rows(); c++) {
-                for (int f = 0; f < num_frames; f++) {
-                    float sum = 0.0f;
-                    for (int ic = 0; ic < _inputBlock.rows(); ic++) {
-                        sum += _weight[k](c, ic) * _inputBlock(ic, f);
+                // Cache-friendly order for column-major weights:
+                // Iterate input channels, then accumulate over contiguous output rows.
+                for (long ic = 0; ic < in_channels; ic++) {
+                    const float x = in_col[ic];
+                    const float* w_col = _weight[k].col(static_cast<int>(ic));
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w_col[oc] * x;
                     }
-                    _output(c, f) += sum;
                 }
             }
         }
     } else {
         // Grouped convolution
-        processGrouped(input, num_frames);
+        const long in_per_group = in_channels / _numGroups;
+        const long out_per_group = out_channels / _numGroups;
+
+        for (size_t k = 0; k < _weight.size(); k++) {
+            const long offset = _dilation * (static_cast<long>(k) + 1 - static_cast<long>(_weight.size()));
+            const long lookback = -offset;
+            const long read_pos = write_pos - lookback;
+
+            for (int f = 0; f < num_frames; f++) {
+                const float* in_col = _inputBuffer.getCol(static_cast<int>(read_pos + f));
+                float* out_col = _output.col(f);
+
+                for (int g = 0; g < _numGroups; g++) {
+                    const long in_base = g * in_per_group;
+                    const long out_base = g * out_per_group;
+
+                    for (long ic = 0; ic < in_per_group; ic++) {
+                        const float x = in_col[in_base + ic];
+                        const float* w_col = _weight[k].col(static_cast<int>(in_base + ic));
+                        for (long oc = 0; oc < out_per_group; oc++) {
+                            out_col[out_base + oc] += w_col[out_base + oc] * x;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Add bias if present
@@ -157,40 +178,6 @@ void Conv1D::process(const Matrix& input, int num_frames) {
     // Advance ring buffer write pointer
     _inputBuffer.advance(num_frames);
 }
-
-void Conv1D::processGrouped(const Matrix& input, int num_frames) {
-    const long in_channels = getInChannels();
-    const long out_channels = getOutChannels();
-    const long in_per_group = in_channels / _numGroups;
-    const long out_per_group = out_channels / _numGroups;
-
-    for (int g = 0; g < _numGroups; g++) {
-        for (size_t k = 0; k < _weight.size(); k++) {
-            const long offset = _dilation * (static_cast<long>(k) + 1 - static_cast<long>(_weight.size()));
-            const long lookback = -offset;
-
-            // Read from ring buffer
-            _inputBuffer.read(_inputBlock, num_frames, lookback);
-
-            // Extract input slice for this group (rows g*in_per_group to (g+1)*in_per_group-1)
-            // Extract weight slice for this group
-            // Extract output slice for this group
-
-            // Perform grouped convolution: output_group += weight_group * input_group
-            for (long oc = 0; oc < out_per_group; oc++) {
-                for (int f = 0; f < num_frames; f++) {
-                    float sum = 0.0f;
-                    for (long ic = 0; ic < in_per_group; ic++) {
-                        sum += _weight[k](g * out_per_group + oc, g * in_per_group + ic) *
-                               _inputBlock(g * in_per_group + ic, f);
-                    }
-                    _output(g * out_per_group + oc, f) += sum;
-                }
-            }
-        }
-    }
-}
-
 long Conv1D::getInChannels() const {
     return _weight.size() > 0 ? _weight[0].cols() : 0;
 }

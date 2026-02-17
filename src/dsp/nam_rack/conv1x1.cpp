@@ -64,31 +64,44 @@ void Conv1x1::process(const Matrix& input, int num_frames) {
     const long out_per_group = out_channels / _numGroups;
 
     if (_numGroups == 1) {
-        // Standard matrix multiplication: output = weight * input
-        // weight is (out_channels x in_channels)
-        // input is (in_channels x num_frames)
-        // output is (out_channels x num_frames)
+        for (int f = 0; f < num_frames; f++) {
+            const float* in_col = input.col(f);
+            float* out_col = _output.col(f);
 
-        for (long oc = 0; oc < out_channels; oc++) {
-            for (int f = 0; f < num_frames; f++) {
-                float sum = 0.0f;
-                for (long ic = 0; ic < in_channels; ic++) {
-                    sum += _weight(oc, ic) * input(ic, f);
+            // Clear output column
+            for (long oc = 0; oc < out_channels; oc++) {
+                out_col[oc] = 0.0f;
+            }
+
+            // Column-major friendly accumulation
+            for (long ic = 0; ic < in_channels; ic++) {
+                const float x = in_col[ic];
+                const float* w_col = _weight.col(static_cast<int>(ic));
+                for (long oc = 0; oc < out_channels; oc++) {
+                    out_col[oc] += w_col[oc] * x;
                 }
-                _output(oc, f) = sum;
             }
         }
     } else {
-        // Grouped convolution: process each group separately
-        for (int g = 0; g < _numGroups; g++) {
-            for (long oc = 0; oc < out_per_group; oc++) {
-                for (int f = 0; f < num_frames; f++) {
-                    float sum = 0.0f;
-                    for (long ic = 0; ic < in_per_group; ic++) {
-                        sum += _weight(g * out_per_group + oc, g * in_per_group + ic) *
-                               input(g * in_per_group + ic, f);
+        for (int f = 0; f < num_frames; f++) {
+            const float* in_col = input.col(f);
+            float* out_col = _output.col(f);
+
+            // Clear output column
+            for (long oc = 0; oc < out_channels; oc++) {
+                out_col[oc] = 0.0f;
+            }
+
+            for (int g = 0; g < _numGroups; g++) {
+                const long in_base = g * in_per_group;
+                const long out_base = g * out_per_group;
+
+                for (long ic = 0; ic < in_per_group; ic++) {
+                    const float x = in_col[in_base + ic];
+                    const float* w_col = _weight.col(static_cast<int>(in_base + ic));
+                    for (long oc = 0; oc < out_per_group; oc++) {
+                        out_col[out_base + oc] += w_col[out_base + oc] * x;
                     }
-                    _output(g * out_per_group + oc, f) = sum;
                 }
             }
         }

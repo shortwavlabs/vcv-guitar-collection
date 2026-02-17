@@ -365,7 +365,6 @@ public:
         for (int i = 0; i < numFrames; i++) {
             gatedInputBuffer[i] = noiseGate.process(input[i]);
         }
-        sanitizeBuffer(gatedInputBuffer.data(), numFrames);
 
         // Check if resampling is needed
         double ratio = modelSampleRate / engineSampleRate;
@@ -376,9 +375,9 @@ public:
                 modelOutputBuffer.resize(numFrames, 0.f);
             }
             model->process(gatedInputBuffer.data(), modelOutputBuffer.data(), numFrames);
-            sanitizeBuffer(modelOutputBuffer.data(), numFrames);
             for (int i = 0; i < numFrames; i++) {
-                output[i] = sanitizeSample(toneStack.process(modelOutputBuffer[i]));
+                float y = toneStack.process(modelOutputBuffer[i]);
+                output[i] = std::isfinite(y) ? y : 0.0f;
             }
         } else {
             // Resampling required using Rack's SampleRateConverter
@@ -400,14 +399,10 @@ public:
             srcIn.process(gatedInputBuffer.data(), 1, &inFrames, resampleInBuffer.data(), 1, &outFrames);
 
             int processedFrames = outFrames;
-            if (processedFrames > 0) {
-                sanitizeBuffer(resampleInBuffer.data(), processedFrames);
-            }
 
             // Process through NAM (all float now)
             if (processedFrames > 0) {
                 model->process(resampleInBuffer.data(), resampleOutBuffer.data(), processedFrames);
-                sanitizeBuffer(resampleOutBuffer.data(), processedFrames);
             }
 
             // Downsample output to engine rate
@@ -417,13 +412,10 @@ public:
                 srcOut.process(resampleOutBuffer.data(), 1, &inFrames, output, 1, &outFrames);
             }
 
-            if (outFrames > 0) {
-                sanitizeBuffer(output, outFrames);
-            }
-
             // Apply tone stack to output
             for (int i = 0; i < numFrames; i++) {
-                output[i] = sanitizeSample(toneStack.process(output[i]));
+                float y = toneStack.process(output[i]);
+                output[i] = std::isfinite(y) ? y : 0.0f;
             }
         }
     }
@@ -477,31 +469,6 @@ private:
     std::vector<float> resampleOutBuffer;
     std::vector<float> modelOutputBuffer;
     std::vector<float> gatedInputBuffer;
-
-    static float softClipSample(float x) {
-        constexpr float kHardLimit = 8.0f;
-        if (x > kHardLimit) return kHardLimit;
-        if (x < -kHardLimit) return -kHardLimit;
-        return x;
-    }
-
-    float sanitizeSample(float x) {
-        if (!std::isfinite(x)) {
-            return 0.0f;
-        }
-        return softClipSample(x);
-    }
-
-    void sanitizeBuffer(float* data, int size) {
-        for (int i = 0; i < size; i++) {
-            const float v = data[i];
-            if (!std::isfinite(v)) {
-                data[i] = 0.0f;
-                continue;
-            }
-            data[i] = softClipSample(v);
-        }
-    }
 
     void updateResamplerRates() {
         // srcIn: engine rate -> model rate (upsample if model rate > engine rate)

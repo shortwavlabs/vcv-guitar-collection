@@ -59,10 +59,10 @@ void RingBuffer::write(const Matrix& input, int num_frames) {
     }
 
     // Copy from input matrix (channels x num_frames)
+    // Columns are contiguous in memory for both matrices (column-major), so memcpy per column.
+    const size_t colBytes = static_cast<size_t>(m_storage.rows()) * sizeof(float);
     for (int f = 0; f < num_frames; f++) {
-        for (int c = 0; c < m_storage.rows(); c++) {
-            m_storage(c, m_writePos + f) = input(c, f);
-        }
+        std::memcpy(m_storage.col(static_cast<int>(m_writePos + f)), input.col(f), colBytes);
     }
 }
 
@@ -101,10 +101,10 @@ void RingBuffer::read(Matrix& output, int num_frames, long lookback) const {
     assert(output.cols() >= num_frames && "Read: output must have enough columns");
 
     // Copy to output matrix (channels x num_frames)
+    // Columns are contiguous in memory for both matrices (column-major), so memcpy per column.
+    const size_t colBytes = static_cast<size_t>(m_storage.rows()) * sizeof(float);
     for (int f = 0; f < num_frames; f++) {
-        for (int c = 0; c < m_storage.rows(); c++) {
-            output(c, f) = m_storage(c, read_pos + f);
-        }
+        std::memcpy(output.col(f), m_storage.col(static_cast<int>(read_pos + f)), colBytes);
     }
 }
 

@@ -87,11 +87,7 @@ private:
     // Runtime buffers
     RingBuffer _inputBuffer;  // Ring buffer for dilated convolution
     Matrix _output;           // Pre-allocated output buffer
-    Matrix _inputBlock;       // Reused read buffer (channels x maxBufferSize)
     int _maxBufferSize;
-
-    // Helper for grouped convolution
-    void processGrouped(const Matrix& input, int num_frames);
 };
 
 } // namespace nam
