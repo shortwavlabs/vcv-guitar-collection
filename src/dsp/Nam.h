@@ -116,6 +116,8 @@ struct NoiseGate {
     // Coefficients
     float envAttack = 0.f, envRelease = 0.f;
     float gainAttack = 0.f, gainRelease = 0.f;
+    float openThresholdLinear = 0.f, closeThresholdLinear = 0.f;
+    float samplePeriod = 0.f;
     double sampleRate = 48000.0;
 
     NoiseGate() {
@@ -147,15 +149,24 @@ struct NoiseGate {
     }
     
     void recalculateCoefficients() {
+        const float sampleRateF = static_cast<float>(sampleRate);
+
         // Envelope follower coefficients (fast attack, slow release)
-        envAttack = 1.f - std::exp(-1.f / (0.001f * static_cast<float>(sampleRate)));
-        envRelease = 1.f - std::exp(-1.f / (0.05f * static_cast<float>(sampleRate)));
+        envAttack = 1.f - std::exp(-1.f / (0.001f * sampleRateF));
+        envRelease = 1.f - std::exp(-1.f / (0.05f * sampleRateF));
         
         // Gain smoothing coefficients
         const float attackSafe = std::max(attack, 1.0e-6f);
         const float releaseSafe = std::max(release, 1.0e-6f);
-        gainAttack = 1.f - std::exp(-1.f / (attackSafe * static_cast<float>(sampleRate)));
-        gainRelease = 1.f - std::exp(-1.f / (releaseSafe * static_cast<float>(sampleRate)));
+        gainAttack = 1.f - std::exp(-1.f / (attackSafe * sampleRateF));
+        gainRelease = 1.f - std::exp(-1.f / (releaseSafe * sampleRateF));
+
+        // Thresholds converted to linear power domain for hot-path comparisons
+        openThresholdLinear = std::pow(10.f, threshold / 10.f);
+        closeThresholdLinear = std::pow(10.f, (threshold - hysteresis) / 10.f);
+
+        // Precompute reciprocal sample rate for hold timer update
+        samplePeriod = 1.f / sampleRateF;
     }
     
     float process(float sample) {
@@ -164,16 +175,10 @@ struct NoiseGate {
         float envCoeff = rectified > envelope ? envAttack : envRelease;
         envelope += envCoeff * (rectified - envelope);
         
-        // Convert to dB
-        float envDb = 10.f * std::log10(envelope + 1e-10f);
-        
-        // Hysteresis logic
-        float openThreshold = threshold;
-        float closeThreshold = threshold - hysteresis;
-        
+        // Hysteresis logic in linear domain
         if (isOpen) {
-            if (envDb < closeThreshold) {
-                holdCounter += 1.f / static_cast<float>(sampleRate);
+            if (envelope < closeThresholdLinear) {
+                holdCounter += samplePeriod;
                 if (holdCounter >= hold) {
                     isOpen = false;
                     holdCounter = 0.f;
@@ -182,7 +187,7 @@ struct NoiseGate {
                 holdCounter = 0.f;
             }
         } else {
-            if (envDb > openThreshold) {
+            if (envelope > openThresholdLinear) {
                 isOpen = true;
                 holdCounter = 0.f;
             }
