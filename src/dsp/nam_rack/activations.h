@@ -20,7 +20,7 @@
 #include "matrix.h"
 
 // Enable Rack SIMD path only when explicitly requested.
-// Current SDK path has no native tanh op, so the fallback can be slower than scalar.
+// Although implemented, the SIMD activation path can be slower on some toolchains.
 #if defined(NAM_FORCE_SIMD_ACTIVATIONS) && defined(__has_include)
     #if __has_include(<simd/functions.hpp>)
         #include <simd/functions.hpp>
@@ -143,26 +143,28 @@ inline float hard_swish(float x) {
  * SIMD fast tanh - process 4 floats at once
  */
 inline rack::simd::float_4 fast_tanh_simd(rack::simd::float_4 x) {
-    // For now, fall back to scalar for each lane
-    // TODO: Implement true SIMD version using SIMD approximations
-    alignas(16) float vals[4];
-    x.store(vals);
-    for (int i = 0; i < 4; i++) {
-        vals[i] = fast_tanh(vals[i]);
-    }
-    return rack::simd::float_4::load(vals);
+    using rack::simd::abs;
+
+    const rack::simd::float_4 ax = abs(x);
+    const rack::simd::float_4 x2 = x * x;
+
+    const rack::simd::float_4 c0 = 2.45550750702956f;
+    const rack::simd::float_4 c1 = 0.893229853513558f;
+    const rack::simd::float_4 c2 = 0.821226666969744f;
+    const rack::simd::float_4 c3 = 2.44506634652299f;
+    const rack::simd::float_4 c4 = 0.814642734961073f;
+
+    const rack::simd::float_4 num = x * (c0 + c0 * ax + (c1 + c2 * ax) * x2);
+    const rack::simd::float_4 den = c3 + (c3 + x2) * abs(x + c4 * x * ax);
+
+    return num / den;
 }
 
 /**
  * SIMD fast sigmoid - process 4 floats at once
  */
 inline rack::simd::float_4 fast_sigmoid_simd(rack::simd::float_4 x) {
-    alignas(16) float vals[4];
-    x.store(vals);
-    for (int i = 0; i < 4; i++) {
-        vals[i] = fast_sigmoid(vals[i]);
-    }
-    return rack::simd::float_4::load(vals);
+    return 0.5f * (fast_tanh_simd(x * 0.5f) + 1.0f);
 }
 
 #endif // NAM_USE_SIMD
@@ -403,10 +405,7 @@ public:
         long i = 0;
         for (; i + 3 < size; i += 4) {
             rack::simd::float_4 v = rack::simd::float_4::load(data + i);
-            // fast_sigmoid(x) = 0.5 * (fast_tanh(x * 0.5) + 1)
-            v = v * 0.5f;
-            v = fast_tanh_simd(v);
-            v = (v + 1.0f) * 0.5f;
+            v = fast_sigmoid_simd(v);
             v.store(data + i);
         }
         for (; i < size; i++) {
