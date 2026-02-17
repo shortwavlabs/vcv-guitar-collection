@@ -651,3 +651,34 @@ This roadmap is sequenced to deliver early CPU wins with minimal risk, while def
 - Land PRs in roadmap order unless a dependency requires reorder.
 - Keep each optimization behind straightforward revert boundaries (small, focused commits/PRs).
 - For SIMD and fast approximation changes, keep scalar-safe fallback available.
+
+---
+
+## Measured Results (After PR1–PR8)
+
+### Run Context
+
+- Script: `./run_performance_benchmarks.sh`
+- Current baseline artifact: `docs/perf/perf-baseline-20260217-200058.csv`
+- Previous comparable baseline: `docs/perf/perf-baseline-20260217-193555.csv`
+- Model coverage currently available in `res/models/`: WaveNet only (no bundled LSTM/ConvNet/Linear yet)
+
+### WaveNet Benchmark Delta
+
+| Sample Rate | Previous Mean (us/block) | Current Mean (us/block) | Improvement |
+|---|---:|---:|---:|
+| 44.1kHz | 592.704 | 487.461 | 17.8% |
+| 48kHz | 535.193 | 432.998 | 19.1% |
+
+### P95 Delta
+
+| Sample Rate | Previous P95 (us/block) | Current P95 (us/block) | Improvement |
+|---|---:|---:|---:|
+| 44.1kHz | 627.000 | 517.000 | 17.5% |
+| 48kHz | 577.000 | 461.000 | 20.1% |
+
+### Notes
+
+- One intermediate run (`docs/perf/perf-baseline-20260217-200036.csv`) showed a transient 48kHz max-block spike (`2197us`) likely caused by scheduler/system jitter.
+- A confirmation run (`docs/perf/perf-baseline-20260217-200058.csv`) did not reproduce the spike (`max 573us` at 48kHz, `outlier_blocks = 0`).
+- Results indicate meaningful aggregate gains from early roadmap items (matrix, gate, conv paths, activation policy, and LSTM SIMD preparation), with remaining upside expected as non-WaveNet architectures are benchmarked.
