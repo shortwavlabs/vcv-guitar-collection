@@ -25,6 +25,8 @@ RACK_DIR ?= dep/Rack-SDK
 # endif
 
 # Enable Link Time Optimization for performance
+# FLAGS += -DNAM_RUNTIME_SANITIZE=1
+# FLAGS += -DNAMPLAYER_SANITIZE_BLOCK_OUTPUT=1
 FLAGS += -flto
 LDFLAGS += -flto
 

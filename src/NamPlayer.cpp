@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <cmath>
 
+#ifndef NAMPLAYER_SANITIZE_BLOCK_OUTPUT
+#define NAMPLAYER_SANITIZE_BLOCK_OUTPUT 0
+#endif
+
 NamPlayer::NamPlayer() {
     config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
     
@@ -84,72 +88,68 @@ void NamPlayer::process(const ProcessArgs& args) {
     }
     float input = inputs[AUDIO_INPUT].getVoltage() / 5.f * inputGain;
     
-    // Update noise gate parameters from knobs (with CV)
-    if (namDsp) {
+    // Update control-rate DSP parameters once per processing block
+    if (namDsp && bufferPos == 0) {
         float threshold = params[GATE_THRESHOLD_PARAM].getValue();
         if (inputs[CV_GATE_THRESHOLD_INPUT].isConnected()) {
             float cv = inputs[CV_GATE_THRESHOLD_INPUT].getVoltage();
             threshold = rescale(cv, -5.f, 5.f, -80.f, 0.f);
         }
-        
+
         float attack = params[GATE_ATTACK_PARAM].getValue();
         if (inputs[CV_GATE_ATTACK_INPUT].isConnected()) {
             float cv = inputs[CV_GATE_ATTACK_INPUT].getVoltage();
             attack = rescale(cv, -5.f, 5.f, 0.1f, 50.f);
         }
-        
+
         float release = params[GATE_RELEASE_PARAM].getValue();
         if (inputs[CV_GATE_RELEASE_INPUT].isConnected()) {
             float cv = inputs[CV_GATE_RELEASE_INPUT].getVoltage();
             release = rescale(cv, -5.f, 5.f, 10.f, 500.f);
         }
-        
+
         float hold = params[GATE_HOLD_PARAM].getValue();
         if (inputs[CV_GATE_HOLD_INPUT].isConnected()) {
             float cv = inputs[CV_GATE_HOLD_INPUT].getVoltage();
             hold = rescale(cv, -5.f, 5.f, 10.f, 500.f);
         }
-        
         namDsp->setNoiseGate(threshold, attack, release, hold);
-    }
-    
-    // Update tone stack parameters from knobs (convert 0-1 to -12 to +12 dB, with CV)
-    if (namDsp) {
+
         float bass = params[BASS_PARAM].getValue();
         if (inputs[CV_BASS_INPUT].isConnected()) {
             float cv = inputs[CV_BASS_INPUT].getVoltage();
             bass = rescale(cv, -5.f, 5.f, 0.f, 1.f);
         }
         bass = (bass - 0.5f) * 24.f;
-        
+
         float middle = params[MIDDLE_PARAM].getValue();
         if (inputs[CV_MIDDLE_INPUT].isConnected()) {
             float cv = inputs[CV_MIDDLE_INPUT].getVoltage();
             middle = rescale(cv, -5.f, 5.f, 0.f, 1.f);
         }
         middle = (middle - 0.5f) * 24.f;
-        
+
         float treble = params[TREBLE_PARAM].getValue();
         if (inputs[CV_TREBLE_INPUT].isConnected()) {
             float cv = inputs[CV_TREBLE_INPUT].getVoltage();
             treble = rescale(cv, -5.f, 5.f, 0.f, 1.f);
         }
         treble = (treble - 0.5f) * 24.f;
-        
+
         float presence = params[PRESENCE_PARAM].getValue();
         if (inputs[CV_PRESENCE_INPUT].isConnected()) {
             float cv = inputs[CV_PRESENCE_INPUT].getVoltage();
             presence = rescale(cv, -5.f, 5.f, 0.f, 1.f);
         }
         presence = (presence - 0.5f) * 24.f;
-        
+
         float depth = params[DEPTH_PARAM].getValue();
         if (inputs[CV_DEPTH_INPUT].isConnected()) {
             float cv = inputs[CV_DEPTH_INPUT].getVoltage();
             depth = rescale(cv, -5.f, 5.f, 0.f, 1.f);
         }
         depth = (depth - 0.5f) * 24.f;
-        
+
         namDsp->setToneStack(bass, middle, treble, presence, depth);
     }
     
@@ -187,6 +187,7 @@ void NamPlayer::process(const ProcessArgs& args) {
     if (bufferPos >= BLOCK_SIZE) {
         if (namDsp && namDsp->isModelLoaded()) {
             namDsp->process(inputBuffer.data(), outputBuffer.data(), BLOCK_SIZE);
+#if NAMPLAYER_SANITIZE_BLOCK_OUTPUT
             constexpr float kModuleSoftLimit = 1.5f;
             for (int i = 0; i < BLOCK_SIZE; i++) {
                 float v = outputBuffer[i];
@@ -200,6 +201,7 @@ void NamPlayer::process(const ProcessArgs& args) {
                     outputBuffer[i] = clamped;
                 }
             }
+#endif
         }
         bufferPos = 0;
     }

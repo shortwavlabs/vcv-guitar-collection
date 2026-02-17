@@ -12,6 +12,7 @@
 
 // Use VCV Rack's resampler instead of libsamplerate
 #include <dsp/resampler.hpp>
+#include <dsp/filter.hpp>
 
 #include <memory>
 #include <vector>
@@ -20,6 +21,10 @@
 #include <cmath>
 #include <cstdio>
 #include <exception>
+
+#ifndef NAM_RUNTIME_SANITIZE
+#define NAM_RUNTIME_SANITIZE 0
+#endif
 
 /**
  * BiquadFilter - Second-order IIR filter for tone shaping
@@ -214,11 +219,11 @@ struct NoiseGate {
 struct ToneStack {
     static constexpr float PARAM_EPSILON = 1.0e-4f;
 
-    BiquadFilter depth;     // Peaking at 80 Hz
-    BiquadFilter bass;      // Low shelf at 100 Hz
-    BiquadFilter middle;    // Peaking at 650 Hz
-    BiquadFilter treble;    // High shelf at 3.2 kHz
-    BiquadFilter presence;  // Peaking at 3.5 kHz
+    rack::dsp::TBiquadFilter<float> depth;     // Peaking at 80 Hz
+    rack::dsp::TBiquadFilter<float> bass;      // Low shelf at 100 Hz
+    rack::dsp::TBiquadFilter<float> middle;    // Peaking at 650 Hz
+    rack::dsp::TBiquadFilter<float> treble;    // High shelf at 3.2 kHz
+    rack::dsp::TBiquadFilter<float> presence;  // Peaking at 3.5 kHz
     
     double sampleRate = 48000.0;
     float bassDb = 0.f, midDb = 0.f, trebleDb = 0.f, presenceDb = 0.f, depthDb = 0.f;
@@ -259,11 +264,20 @@ struct ToneStack {
     }
     
     void updateFilters() {
-        depth.setPeaking(sampleRate, 80.0, 0.7, depthDb);
-        bass.setLowShelf(sampleRate, 100.0, 0.7, bassDb);
-        middle.setPeaking(sampleRate, 650.0, 0.7, midDb);
-        treble.setHighShelf(sampleRate, 3200.0, 0.7, trebleDb);
-        presence.setPeaking(sampleRate, 3500.0, 0.7, presenceDb);
+        const float sr = static_cast<float>(sampleRate);
+        const float q = 0.7f;
+
+        const float depthV = std::pow(10.0f, depthDb / 20.0f);
+        const float bassV = std::pow(10.0f, bassDb / 20.0f);
+        const float midV = std::pow(10.0f, midDb / 20.0f);
+        const float trebleV = std::pow(10.0f, trebleDb / 20.0f);
+        const float presenceV = std::pow(10.0f, presenceDb / 20.0f);
+
+        depth.setParameters(rack::dsp::TBiquadFilter<float>::PEAK, 80.0f / sr, q, depthV);
+        bass.setParameters(rack::dsp::TBiquadFilter<float>::LOWSHELF, 100.0f / sr, q, bassV);
+        middle.setParameters(rack::dsp::TBiquadFilter<float>::PEAK, 650.0f / sr, q, midV);
+        treble.setParameters(rack::dsp::TBiquadFilter<float>::HIGHSHELF, 3200.0f / sr, q, trebleV);
+        presence.setParameters(rack::dsp::TBiquadFilter<float>::PEAK, 3500.0f / sr, q, presenceV);
     }
     
     float process(float sample) {
@@ -452,15 +466,25 @@ public:
             }
             model->process(gatedInputBuffer.data(), modelOutputBuffer.data(), numFrames);
             if (!toneStackActive) {
+#if NAM_RUNTIME_SANITIZE
                 for (int i = 0; i < numFrames; i++) {
                     const float y = modelOutputBuffer[i];
                     output[i] = std::isfinite(y) ? y : 0.0f;
                 }
+#else
+                std::copy(modelOutputBuffer.begin(), modelOutputBuffer.begin() + numFrames, output);
+#endif
             } else {
+#if NAM_RUNTIME_SANITIZE
                 for (int i = 0; i < numFrames; i++) {
                     float y = toneStack.process(modelOutputBuffer[i]);
                     output[i] = std::isfinite(y) ? y : 0.0f;
                 }
+#else
+                for (int i = 0; i < numFrames; i++) {
+                    output[i] = toneStack.process(modelOutputBuffer[i]);
+                }
+#endif
             }
         } else {
             // Resampling required using Rack's SampleRateConverter
@@ -497,15 +521,23 @@ public:
 
             // Apply tone stack to output
             if (!toneStackActive) {
+#if NAM_RUNTIME_SANITIZE
                 for (int i = 0; i < numFrames; i++) {
                     const float y = output[i];
                     output[i] = std::isfinite(y) ? y : 0.0f;
                 }
+#endif
             } else {
+#if NAM_RUNTIME_SANITIZE
                 for (int i = 0; i < numFrames; i++) {
                     float y = toneStack.process(output[i]);
                     output[i] = std::isfinite(y) ? y : 0.0f;
                 }
+#else
+                for (int i = 0; i < numFrames; i++) {
+                    output[i] = toneStack.process(output[i]);
+                }
+#endif
             }
         }
     }

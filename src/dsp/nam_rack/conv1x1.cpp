@@ -1,5 +1,6 @@
 #include "conv1x1.h"
 #include <cassert>
+#include <cstring>
 
 namespace nam {
 
@@ -68,9 +69,13 @@ void Conv1x1::process(const Matrix& input, int num_frames) {
             const float* in_col = input.col(f);
             float* out_col = _output.col(f);
 
-            // Clear output column
-            for (long oc = 0; oc < out_channels; oc++) {
-                out_col[oc] = 0.0f;
+            // Initialize output column (bias or zero)
+            if (_doBias) {
+                for (long oc = 0; oc < out_channels; oc++) {
+                    out_col[oc] = _bias(oc);
+                }
+            } else {
+                std::memset(out_col, 0, static_cast<size_t>(out_channels) * sizeof(float));
             }
 
             // Column-major friendly accumulation
@@ -87,9 +92,13 @@ void Conv1x1::process(const Matrix& input, int num_frames) {
             const float* in_col = input.col(f);
             float* out_col = _output.col(f);
 
-            // Clear output column
-            for (long oc = 0; oc < out_channels; oc++) {
-                out_col[oc] = 0.0f;
+            // Initialize output column (bias or zero)
+            if (_doBias) {
+                for (long oc = 0; oc < out_channels; oc++) {
+                    out_col[oc] = _bias(oc);
+                }
+            } else {
+                std::memset(out_col, 0, static_cast<size_t>(out_channels) * sizeof(float));
             }
 
             for (int g = 0; g < _numGroups; g++) {
@@ -103,15 +112,6 @@ void Conv1x1::process(const Matrix& input, int num_frames) {
                         out_col[out_base + oc] += w_col[out_base + oc] * x;
                     }
                 }
-            }
-        }
-    }
-
-    // Add bias if present
-    if (_doBias) {
-        for (int f = 0; f < num_frames; f++) {
-            for (long c = 0; c < _bias.size(); c++) {
-                _output(c, f) += _bias(c);
             }
         }
     }

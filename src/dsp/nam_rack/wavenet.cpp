@@ -1,6 +1,7 @@
 #include "wavenet.h"
 #include <stdexcept>
 #include <algorithm>
+#include <cstring>
 
 namespace nam {
 namespace wavenet {
@@ -52,9 +53,13 @@ void Layer::process(const Matrix& input, const Matrix& condition, int num_frames
     const Matrix& conv_out = mConv.getOutput();
     const Matrix& mixin_out = mInputMixin.getOutput();
 
-    for (int c = 0; c < mZ.rows(); c++) {
-        for (int f = 0; f < num_frames; f++) {
-            mZ(c, f) = conv_out(c, f) + mixin_out(c, f);
+    const int z_rows = mZ.rows();
+    for (int f = 0; f < num_frames; f++) {
+        float* z_col = mZ.col(f);
+        const float* conv_col = conv_out.col(f);
+        const float* mix_col = mixin_out.col(f);
+        for (int c = 0; c < z_rows; c++) {
+            z_col[c] = conv_col[c] + mix_col[c];
         }
     }
 
@@ -64,45 +69,43 @@ void Layer::process(const Matrix& input, const Matrix& condition, int num_frames
         for (int f = 0; f < num_frames; f++) {
             mActivation->apply(mZ.col(f), mZ.rows());
         }
+
+        // Store output to head (skip connection)
+        const size_t headBytes = static_cast<size_t>(mBottleneck) * sizeof(float);
+        for (int f = 0; f < num_frames; f++) {
+            std::memcpy(mOutputHead.col(f), mZ.col(f), headBytes);
+        }
+
         m1x1.process(mZ, num_frames);
     } else {
         // Gated activation: tanh(z[0:b]) * sigmoid(z[b:2b])
-        // Process column by column to handle non-contiguous row blocks
         activations::Activation* sigmoidActivation = activations::Activation::get("Sigmoid");
         for (int f = 0; f < num_frames; f++) {
             float* col = mZ.col(f);
             mActivation->apply(col, mBottleneck);
             sigmoidActivation->apply(col + mBottleneck, mBottleneck);
-        }
-
-        // Elementwise multiply: z[0:b] *= z[b:2b]
-        for (int f = 0; f < num_frames; f++) {
+            float* top_col = mTopRows.col(f);
+            float* head_col = mOutputHead.col(f);
             for (int c = 0; c < mBottleneck; c++) {
-                mZ(c, f) *= mZ(mBottleneck + c, f);
+                const float v = col[c] * col[mBottleneck + c];
+                top_col[c] = v;
+                head_col[c] = v;
             }
         }
 
-        // Process through 1x1 with just top rows
-        for (int c = 0; c < mBottleneck; c++) {
-            for (int f = 0; f < num_frames; f++) {
-                mTopRows(c, f) = mZ(c, f);
-            }
-        }
+        // Process through 1x1 with just top rows (already packed)
         m1x1.process(mTopRows, num_frames);
-    }
-
-    // Store output to head (skip connection)
-    for (int c = 0; c < mBottleneck; c++) {
-        for (int f = 0; f < num_frames; f++) {
-            mOutputHead(c, f) = mZ(c, f);
-        }
     }
 
     // Store output to next layer (residual: input + 1x1 output)
     const Matrix& out1x1 = m1x1.getOutput();
-    for (int c = 0; c < getChannels(); c++) {
-        for (int f = 0; f < num_frames; f++) {
-            mOutputNextLayer(c, f) = input(c, f) + out1x1(c, f);
+    const int channels = static_cast<int>(getChannels());
+    for (int f = 0; f < num_frames; f++) {
+        const float* in_col = input.col(f);
+        const float* out1x1_col = out1x1.col(f);
+        float* next_col = mOutputNextLayer.col(f);
+        for (int c = 0; c < channels; c++) {
+            next_col[c] = in_col[c] + out1x1_col[c];
         }
     }
 }
@@ -164,9 +167,11 @@ void LayerArray::process(const Matrix& layer_inputs, const Matrix& condition,
                          const Matrix& head_inputs, int num_frames) {
     // Copy head inputs from previous layer array
     mHeadInputs.setZero();
-    for (int c = 0; c < mHeadInputs.rows() && c < head_inputs.rows(); c++) {
+    const int head_rows = std::min(mHeadInputs.rows(), head_inputs.rows());
+    if (head_rows > 0) {
+        const size_t headBytes = static_cast<size_t>(head_rows) * sizeof(float);
         for (int f = 0; f < num_frames; f++) {
-            mHeadInputs(c, f) = head_inputs(c, f);
+            std::memcpy(mHeadInputs.col(f), head_inputs.col(f), headBytes);
         }
     }
     processInner(layer_inputs, condition, num_frames);
@@ -176,6 +181,8 @@ void LayerArray::processInner(const Matrix& layer_inputs, const Matrix& conditio
     // Process rechannel
     mRechannel.process(layer_inputs, num_frames);
     Matrix& rechannel_output = mRechannel.getOutput();
+
+    const int head_rows = mHeadInputs.rows();
 
     // Process layers
     for (size_t i = 0; i < mLayers.size(); i++) {
@@ -187,9 +194,12 @@ void LayerArray::processInner(const Matrix& layer_inputs, const Matrix& conditio
 
         // Accumulate head output
         Matrix& head_out = mLayers[i].getOutputHead();
-        for (int c = 0; c < mHeadInputs.rows() && c < head_out.rows(); c++) {
-            for (int f = 0; f < num_frames; f++) {
-                mHeadInputs(c, f) += head_out(c, f);
+        const int accum_rows = std::min(head_rows, head_out.rows());
+        for (int f = 0; f < num_frames; f++) {
+            float* head_in_col = mHeadInputs.col(f);
+            const float* head_out_col = head_out.col(f);
+            for (int c = 0; c < accum_rows; c++) {
+                head_in_col[c] += head_out_col[c];
             }
         }
     }
@@ -197,10 +207,9 @@ void LayerArray::processInner(const Matrix& layer_inputs, const Matrix& conditio
     // Store output from last layer
     if (!mLayers.empty()) {
         Matrix& last_out = mLayers.back().getOutputNextLayer();
-        for (int c = 0; c < mLayerOutputs.rows(); c++) {
-            for (int f = 0; f < num_frames; f++) {
-                mLayerOutputs(c, f) = last_out(c, f);
-            }
+        const size_t rowBytes = static_cast<size_t>(mLayerOutputs.rows()) * sizeof(float);
+        for (int f = 0; f < num_frames; f++) {
+            std::memcpy(mLayerOutputs.col(f), last_out.col(f), rowBytes);
         }
     }
 
