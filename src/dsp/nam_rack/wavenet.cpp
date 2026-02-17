@@ -267,9 +267,7 @@ void WaveNet::setMaxBufferSize(int maxBufferSize) {
 }
 
 void WaveNet::setConditionArray(NAM_SAMPLE* input, int num_frames) {
-    for (int f = 0; f < num_frames; f++) {
-        mCondition(0, f) = static_cast<float>(input[f]);
-    }
+    std::memcpy(mCondition.col(0), input, static_cast<size_t>(num_frames) * sizeof(float));
 }
 
 void WaveNet::process(NAM_SAMPLE* input, NAM_SAMPLE* output, int num_frames) {
@@ -294,10 +292,18 @@ void WaveNet::process(NAM_SAMPLE* input, NAM_SAMPLE* output, int num_frames) {
 
     // Get final output from head rechannel
     Matrix& head_output = mLayerArrays.back().getHeadOutputs();
+    const float* head_data = head_output.data();
+    const int head_rows = head_output.rows();
 
     // Copy to output with head scale
-    for (int f = 0; f < num_frames; f++) {
-        output[f] = static_cast<NAM_SAMPLE>(mHeadScale * head_output(0, f));
+    if (mHeadScale == 1.0f) {
+        for (int f = 0; f < num_frames; f++) {
+            output[f] = static_cast<NAM_SAMPLE>(head_data[f * head_rows]);
+        }
+    } else {
+        for (int f = 0; f < num_frames; f++) {
+            output[f] = static_cast<NAM_SAMPLE>(mHeadScale * head_data[f * head_rows]);
+        }
     }
 }
 

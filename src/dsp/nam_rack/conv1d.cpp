@@ -1,4 +1,5 @@
 #include "conv1d.h"
+#include <cstring>
 
 namespace nam {
 
@@ -103,15 +104,22 @@ void Conv1D::process(const Matrix& input, int num_frames) {
     // Write input to ring buffer
     _inputBuffer.write(input, num_frames);
 
-    // Zero output before processing
-    for (int c = 0; c < _output.rows(); c++) {
+    // Initialize output before accumulation (bias or zero)
+    const long out_channels = getOutChannels();
+    if (_bias.size() > 0) {
         for (int f = 0; f < num_frames; f++) {
-            _output(c, f) = 0.0f;
+            float* out_col = _output.col(f);
+            for (long c = 0; c < out_channels; c++) {
+                out_col[c] = _bias(c);
+            }
+        }
+    } else {
+        for (int f = 0; f < num_frames; f++) {
+            std::memset(_output.col(f), 0, static_cast<size_t>(out_channels) * sizeof(float));
         }
     }
 
     const long write_pos = _inputBuffer.getWritePos();
-    const long out_channels = getOutChannels();
     const long in_channels = getInChannels();
 
     if (_numGroups == 1) {
@@ -120,6 +128,53 @@ void Conv1D::process(const Matrix& input, int num_frames) {
             const long offset = _dilation * (static_cast<long>(k) + 1 - static_cast<long>(_weight.size()));
             const long lookback = -offset;
             const long read_pos = write_pos - lookback;
+
+            if (in_channels == 1) {
+                const float* w0 = _weight[k].col(0);
+                for (int f = 0; f < num_frames; f++) {
+                    const float* in_col = _inputBuffer.getCol(static_cast<int>(read_pos + f));
+                    float* out_col = _output.col(f);
+                    const float x0 = in_col[0];
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w0[oc] * x0;
+                    }
+                }
+                continue;
+            }
+
+            if (in_channels == 2) {
+                const float* w0 = _weight[k].col(0);
+                const float* w1 = _weight[k].col(1);
+                for (int f = 0; f < num_frames; f++) {
+                    const float* in_col = _inputBuffer.getCol(static_cast<int>(read_pos + f));
+                    float* out_col = _output.col(f);
+                    const float x0 = in_col[0];
+                    const float x1 = in_col[1];
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w0[oc] * x0 + w1[oc] * x1;
+                    }
+                }
+                continue;
+            }
+
+            if (in_channels == 4) {
+                const float* w0 = _weight[k].col(0);
+                const float* w1 = _weight[k].col(1);
+                const float* w2 = _weight[k].col(2);
+                const float* w3 = _weight[k].col(3);
+                for (int f = 0; f < num_frames; f++) {
+                    const float* in_col = _inputBuffer.getCol(static_cast<int>(read_pos + f));
+                    float* out_col = _output.col(f);
+                    const float x0 = in_col[0];
+                    const float x1 = in_col[1];
+                    const float x2 = in_col[2];
+                    const float x3 = in_col[3];
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w0[oc] * x0 + w1[oc] * x1 + w2[oc] * x2 + w3[oc] * x3;
+                    }
+                }
+                continue;
+            }
 
             for (int f = 0; f < num_frames; f++) {
                 const float* in_col = _inputBuffer.getCol(static_cast<int>(read_pos + f));
@@ -162,15 +217,6 @@ void Conv1D::process(const Matrix& input, int num_frames) {
                         }
                     }
                 }
-            }
-        }
-    }
-
-    // Add bias if present
-    if (_bias.size() > 0) {
-        for (int f = 0; f < num_frames; f++) {
-            for (long c = 0; c < _bias.size(); c++) {
-                _output(c, f) += _bias(c);
             }
         }
     }
