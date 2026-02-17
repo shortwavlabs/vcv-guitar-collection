@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.platform_name }}
+    name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -23,9 +23,6 @@ jobs:
           - os: macos-latest
             platform_name: mac-arm64
             sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-mac-arm64.zip
-          - os: macos-15-intel
-            platform_name: mac-x64
-            sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-mac-x64.zip
 
     defaults:
       run:
@@ -43,7 +40,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev jq zstd libjack-jackd2-dev libpulse-dev
+          sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev jq zstd
 
       # ------------------------------------------------------------------------
       # Setup Dependencies (Mac)
@@ -73,6 +70,15 @@ jobs:
             mingw-w64-x86_64-zstd
 
       # ------------------------------------------------------------------------
+      # Run Tests
+      # ------------------------------------------------------------------------
+      - name: Run Tests
+        shell: bash
+        run: |
+          chmod +x ./run_tests.sh
+          ./run_tests.sh
+
+      # ------------------------------------------------------------------------
       # Download and Setup SDK
       # ------------------------------------------------------------------------
       - name: Setup Rack SDK
@@ -81,43 +87,15 @@ jobs:
           echo "Downloading SDK from ${{ matrix.sdk_url }}"
           curl -L -o Rack-SDK.zip "${{ matrix.sdk_url }}"
           unzip -q Rack-SDK.zip
-          # SDK unzips to a folder like "Rack-SDK". Move it to dep/Rack-SDK where tests expect it
+          # SDK unzips to a folder like "Rack-SDK". We rename it to "Rack-SDK" just in case name varies.
           if [ -d "Rack-SDK" ]; then
-            mv "Rack-SDK" dep/Rack-SDK
+            echo "SDK found in Rack-SDK"
           else
             # Find the directory it unzipped to (e.g. Rack-SDK-2.x.x)
             SDK_DIR=$(ls -d Rack-SDK* | head -n 1)
-            mv "$SDK_DIR" dep/Rack-SDK
+            mv "$SDK_DIR" Rack-SDK
           fi
-          echo "RACK_DIR=$(pwd)/dep/Rack-SDK" >> $GITHUB_ENV
-          
-      # ------------------------------------------------------------------------
-      # Download Rack Runtime (Windows only - for tests)
-      # ------------------------------------------------------------------------
-      - name: Download Rack Runtime (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          echo "Downloading VCV Rack installer for Windows to get runtime DLL..."
-          curl -L -o RackFree.exe "https://vcvrack.com/downloads/RackFree-latest-win-x64.exe"
-          # Use 7zip to extract the installer
-          7z x RackFree.exe -o"RackExtracted" -y
-          # Copy runtime DLLs to SDK location for tests
-          cp RackExtracted/libRack.dll dep/Rack-SDK/ || echo "Failed to copy libRack.dll"
-          cp RackExtracted/libgcc_s_seh-1.dll dep/Rack-SDK/ || echo "Failed to copy libgcc_s_seh-1.dll"
-          cp RackExtracted/libstdc++-6.dll dep/Rack-SDK/ || echo "Failed to copy libstdc++-6.dll"
-          cp RackExtracted/libwinpthread-1.dll dep/Rack-SDK/ || echo "Failed to copy libwinpthread-1.dll"
-          echo "DLLs copied to SDK:"
-          ls -la dep/Rack-SDK/*.dll
-
-      # ------------------------------------------------------------------------
-      # Run Tests
-      # ------------------------------------------------------------------------
-      - name: Run Tests (with coverage reporting)
-        shell: bash
-        run: |
-          chmod +x ./run_tests_with_coverage.sh
-          ./run_tests_with_coverage.sh
+          echo "RACK_DIR=$(pwd)/Rack-SDK" >> $GITHUB_ENV
 
       # ------------------------------------------------------------------------
       # Build Plugin (Linux/Mac)
@@ -135,15 +113,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          # Set RACK_DIR using MSYS2 path format
-          export RACK_DIR="$(cygpath -u "$GITHUB_WORKSPACE")/dep/Rack-SDK"
-          echo "RACK_DIR=$RACK_DIR"
-          # Check what SDK thinks the OS is
-          echo "Checking arch detection..."
-          uname -s
+          # Re-export RACK_DIR inside MSYS2.
+          export RACK_DIR="$(pwd)/Rack-SDK"
           make dep
-          # Force Windows architecture detection by overriding RACK_OS
-          make dist RACK_OS=win
+          make dist
 
       # ------------------------------------------------------------------------
       # Upload Artifacts
