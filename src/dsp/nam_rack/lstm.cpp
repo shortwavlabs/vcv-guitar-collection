@@ -65,13 +65,41 @@ void LSTMCell::process(const Vector& x) {
     // mW is (4*hidden_size) x (input_size + hidden_size)
     // mXH is (input_size + hidden_size)
     // Result is (4*hidden_size)
-    for (int i = 0; i < 4 * mHiddenSize; i++) {
+    const int rows = 4 * mHiddenSize;
+    const int cols = mInputSize + mHiddenSize;
+
+#if NAM_USE_SIMD
+    int i = 0;
+    const float* b_data = mB.data();
+    float* ifgo_data = mIFGO.data();
+
+    for (; i + 3 < rows; i += 4) {
+        rack::simd::float_4 sum = rack::simd::float_4::load(b_data + i);
+
+        for (int j = 0; j < cols; j++) {
+            const rack::simd::float_4 w = rack::simd::float_4::load(mW.col(j) + i);
+            sum += w * mXH(j);
+        }
+
+        sum.store(ifgo_data + i);
+    }
+
+    for (; i < rows; i++) {
         float sum = mB(i);
-        for (int j = 0; j < mInputSize + mHiddenSize; j++) {
+        for (int j = 0; j < cols; j++) {
             sum += mW(i, j) * mXH(j);
         }
         mIFGO(i) = sum;
     }
+#else
+    for (int i = 0; i < rows; i++) {
+        float sum = mB(i);
+        for (int j = 0; j < cols; j++) {
+            sum += mW(i, j) * mXH(j);
+        }
+        mIFGO(i) = sum;
+    }
+#endif
 
     // Gate offsets
     const int i_offset = 0;
