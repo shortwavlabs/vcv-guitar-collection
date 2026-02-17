@@ -129,11 +129,25 @@ NAM_RACK_BIN="${OUT_DIR}/test_nam_rack_coverage"
 # Compile nam_rack tests (standalone, no NAM/Eigen dependencies)
 "$CXX" -std=c++11 -Wall $COVERAGE_FLAGS \
   -Isrc \
+  -Idep/Rack-SDK/include \
+  -Idep/Rack-SDK/dep/include \
   -o "$NAM_RACK_BIN" \
   src/tests/test_nam_rack.cpp \
   src/dsp/nam_rack/ring_buffer.cpp \
   src/dsp/nam_rack/conv1d.cpp \
-  src/dsp/nam_rack/conv1x1.cpp
+  src/dsp/nam_rack/conv1x1.cpp \
+  src/dsp/nam_rack/dsp.cpp \
+  src/dsp/nam_rack/linear.cpp \
+  src/dsp/nam_rack/convnet.cpp \
+  src/dsp/nam_rack/wavenet.cpp \
+  src/dsp/nam_rack/lstm.cpp \
+  src/dsp/nam_rack/model_loader.cpp \
+  -Ldep/Rack-SDK \
+  -lRack \
+  -ldl \
+  -lm \
+  -lpthread \
+  -Wl,-rpath,@executable_path/../../dep/Rack-SDK
 
 if ! "$NAM_RACK_BIN"; then
   EXIT_CODE=$?
