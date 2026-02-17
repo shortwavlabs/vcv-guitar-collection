@@ -20,7 +20,7 @@ jobs:
           - os: windows-latest
             platform_name: win-x64
             sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-win-x64.zip
-          - os: macos-latest
+          - os: macos-14
             platform_name: mac-arm64
             sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-mac-arm64.zip
 
@@ -70,15 +70,6 @@ jobs:
             mingw-w64-x86_64-zstd
 
       # ------------------------------------------------------------------------
-      # Run Tests
-      # ------------------------------------------------------------------------
-      - name: Run Tests
-        shell: bash
-        run: |
-          chmod +x ./run_tests.sh
-          ./run_tests.sh
-
-      # ------------------------------------------------------------------------
       # Download and Setup SDK
       # ------------------------------------------------------------------------
       - name: Setup Rack SDK
@@ -87,15 +78,37 @@ jobs:
           echo "Downloading SDK from ${{ matrix.sdk_url }}"
           curl -L -o Rack-SDK.zip "${{ matrix.sdk_url }}"
           unzip -q Rack-SDK.zip
-          # SDK unzips to a folder like "Rack-SDK". We rename it to "Rack-SDK" just in case name varies.
+          mkdir -p dep
+          # SDK unzips to a folder like "Rack-SDK". Move it to dep/Rack-SDK where tests/build expect it.
           if [ -d "Rack-SDK" ]; then
-            echo "SDK found in Rack-SDK"
+            mv "Rack-SDK" dep/Rack-SDK
           else
             # Find the directory it unzipped to (e.g. Rack-SDK-2.x.x)
             SDK_DIR=$(ls -d Rack-SDK* | head -n 1)
-            mv "$SDK_DIR" Rack-SDK
+            mv "$SDK_DIR" dep/Rack-SDK
           fi
-          echo "RACK_DIR=$(pwd)/Rack-SDK" >> $GITHUB_ENV
+          echo "RACK_DIR=$(pwd)/dep/Rack-SDK" >> $GITHUB_ENV
+
+      # ------------------------------------------------------------------------
+      # Run Tests (Linux/Mac)
+      # ------------------------------------------------------------------------
+      - name: Run Tests (Linux/Mac)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          chmod +x ./run_tests.sh
+          ./run_tests.sh
+
+      # ------------------------------------------------------------------------
+      # Run Tests (Windows)
+      # ------------------------------------------------------------------------
+      - name: Run Tests (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          export RACK_DIR="$(pwd)/dep/Rack-SDK"
+          chmod +x ./run_tests.sh
+          ./run_tests.sh
 
       # ------------------------------------------------------------------------
       # Build Plugin (Linux/Mac)
@@ -114,7 +127,7 @@ jobs:
         shell: msys2 {0}
         run: |
           # Re-export RACK_DIR inside MSYS2.
-          export RACK_DIR="$(pwd)/Rack-SDK"
+          export RACK_DIR="$(pwd)/dep/Rack-SDK"
           make dep
           make dist
 
