@@ -84,7 +84,7 @@ Guitar Tools brings professional guitar amp modeling and cabinet simulation to V
 ### 🛠️ Technical Features
 
 **Audio Processing:**
-- Integration with NeuralAmpModelerCore library
+- In-tree NAM inference engine (`src/dsp/nam_rack`)
 - Multi-threaded model and IR loading
 - Block processing (128 samples) for efficiency
 - SIMD-optimized DSP algorithms

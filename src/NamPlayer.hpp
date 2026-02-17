@@ -96,6 +96,10 @@ struct NamPlayer : Module {
     
     // Waveform display settings
     WaveformColor waveformColor = WaveformColor::Green;
+
+    // Performance mode
+    int ecoModeLevel = NamDSP::ECO_OFF;
+    bool useFastTanh = true;
     
     NamPlayer();
     ~NamPlayer();

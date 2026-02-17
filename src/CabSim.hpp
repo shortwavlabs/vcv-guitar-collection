@@ -46,8 +46,8 @@ struct CabSim : Module {
     std::vector<float> pendingIrSamples[2];
     std::string pendingIrPath[2];
     std::string pendingIrName[2];
-    std::atomic<bool> hasPendingIr[2] = {false, false};
-    std::atomic<bool> hasPendingIrUnload[2] = {false, false};
+    std::atomic<bool> hasPendingIr[2];
+    std::atomic<bool> hasPendingIrUnload[2];
 
     // Pending sample rate updates (applied on audio thread)
     std::atomic<float> pendingSampleRate{48000.f};

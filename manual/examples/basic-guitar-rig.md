@@ -87,6 +87,7 @@ Cabinet Simulator OUT → Audio-8 INPUT 1
 - **INPUT**: Start at 0dB (12 o'clock)
 - **OUTPUT**: Start at 0dB (12 o'clock)
 - **GATE THRESHOLD**: Fully left (off) for now
+- **Eco Mode**: Off (default), switch to On later if needed for CPU headroom
 - **All EQ knobs**: 0dB (center position)
 
 **Cabinet Simulator:**
@@ -251,7 +252,8 @@ Adjust **Cabinet Sim OUTPUT** to:
 **Fix:**
 1. Increase Audio-8 block size to 512 or 1024
 2. Choose lighter NAM model (Linear or Nano)
-3. Close other applications
+3. Set NAM Player **Eco Mode** to **On**
+4. Close other applications
 
 ---
 

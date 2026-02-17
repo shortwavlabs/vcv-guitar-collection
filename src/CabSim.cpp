@@ -5,38 +5,44 @@
 
 CabSim::CabSim() {
     config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-    
+
+    // Initialize atomic arrays
+    for (int i = 0; i < 2; i++) {
+        hasPendingIr[i].store(false);
+        hasPendingIrUnload[i].store(false);
+    }
+
     // Blend: 0 = IR A only (or dry), 1 = IR B only (or wet)
     // When only one IR loaded, acts as wet/dry mix
     configParam(BLEND_PARAM, 0.f, 1.f, 0.5f, "IR Blend", "%", 0.f, 100.f);
-    
+
     // Lowpass: 1kHz to 20kHz, log scale (2-pole, 12 dB/oct)
     // Display value = 1000 * 20^param, so param 0 = 1kHz, param 1 = 20kHz
-    configParam(LOWPASS_PARAM, 0.f, 1.f, 1.f, "Low-Pass Cutoff", " Hz", 
+    configParam(LOWPASS_PARAM, 0.f, 1.f, 1.f, "Low-Pass Cutoff", " Hz",
                 20.f, 1000.f);  // base=20, multiplier=1000 for exponential display
-    
+
     // Highpass: 20Hz to 2kHz, log scale (2-pole, 12 dB/oct)
     // Display value = 20 * 100^param, so param 0 = 20Hz, param 1 = 2kHz
     configParam(HIGHPASS_PARAM, 0.f, 1.f, 0.f, "High-Pass Cutoff", " Hz",
                 100.f, 20.f);  // base=100, multiplier=20 for exponential display
-    
+
     // Output level: 0-200%
     configParam(OUTPUT_PARAM, 0.f, 2.f, 1.f, "Output Level", "%", 0.f, 100.f);
-    
+
     configInput(AUDIO_INPUT, "Audio");
     configOutput(AUDIO_OUTPUT, "Audio");
-    
+
     // CV inputs
     configInput(CV_BLEND_INPUT, "Blend CV");
     configInput(CV_LOWPASS_INPUT, "Low-Pass Cutoff CV");
     configInput(CV_HIGHPASS_INPUT, "High-Pass Cutoff CV");
     configInput(CV_OUTPUT_INPUT, "Output Level CV");
-    
+
     // Bypass configuration
     configBypass(AUDIO_INPUT, AUDIO_OUTPUT);
-    
+
     // Initialize DSP
-    cabSimDsp = std::make_unique<CabSimDSP>();
+    cabSimDsp = std::unique_ptr<CabSimDSP>(new CabSimDSP());
 }
 
 CabSim::~CabSim() {

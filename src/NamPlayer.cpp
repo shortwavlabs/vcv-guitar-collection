@@ -1,6 +1,11 @@
 #include "NamPlayer.hpp"
 #include <osdialog.h>
 #include <algorithm>
+#include <cmath>
+
+#ifndef NAMPLAYER_SANITIZE_BLOCK_OUTPUT
+#define NAMPLAYER_SANITIZE_BLOCK_OUTPUT 0
+#endif
 
 NamPlayer::NamPlayer() {
     config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -39,15 +44,19 @@ NamPlayer::NamPlayer() {
     configInput(CV_DEPTH_INPUT, "Depth CV");
     
     // Initialize DSP wrapper
-    namDsp = std::make_unique<NamDSP>();
-    
+    namDsp = std::unique_ptr<NamDSP>(new NamDSP());
+    namDsp->setEcoModeLevel(ecoModeLevel);
+
     // Pre-allocate buffers
     inputBuffer.resize(BLOCK_SIZE, 0.f);
     outputBuffer.resize(BLOCK_SIZE, 0.f);
     displayBuffer.resize(DISPLAY_BUFFER_SIZE, 0.f);
-    
-    // Enable fast tanh for better performance
-    nam::activations::Activation::enable_fast_tanh();
+
+    if (useFastTanh) {
+        nam::activations::enableFastTanh();
+    } else {
+        nam::activations::disableFastTanh();
+    }
 }
 
 NamPlayer::~NamPlayer() {
@@ -60,6 +69,9 @@ NamPlayer::~NamPlayer() {
 void NamPlayer::process(const ProcessArgs& args) {
     if (hasPendingDsp.exchange(false, std::memory_order_acq_rel)) {
         namDsp = std::move(pendingDsp);
+        if (namDsp) {
+            namDsp->setEcoModeLevel(ecoModeLevel);
+        }
     }
     if (hasPendingUnload.exchange(false, std::memory_order_acq_rel)) {
         if (namDsp) {
@@ -70,9 +82,11 @@ void NamPlayer::process(const ProcessArgs& args) {
         double newRate = pendingSampleRate.load(std::memory_order_acquire);
         if (namDsp) {
             namDsp->setSampleRate(newRate);
+            namDsp->setEcoModeLevel(ecoModeLevel);
         }
         if (pendingDsp) {
             pendingDsp->setSampleRate(newRate);
+            pendingDsp->setEcoModeLevel(ecoModeLevel);
         }
     }
     // Get input with gain (line-level normalization: ±5V -> ±1.0)
@@ -83,72 +97,68 @@ void NamPlayer::process(const ProcessArgs& args) {
     }
     float input = inputs[AUDIO_INPUT].getVoltage() / 5.f * inputGain;
     
-    // Update noise gate parameters from knobs (with CV)
-    if (namDsp) {
+    // Update control-rate DSP parameters once per processing block
+    if (namDsp && bufferPos == 0) {
         float threshold = params[GATE_THRESHOLD_PARAM].getValue();
         if (inputs[CV_GATE_THRESHOLD_INPUT].isConnected()) {
             float cv = inputs[CV_GATE_THRESHOLD_INPUT].getVoltage();
             threshold = rescale(cv, -5.f, 5.f, -80.f, 0.f);
         }
-        
+
         float attack = params[GATE_ATTACK_PARAM].getValue();
         if (inputs[CV_GATE_ATTACK_INPUT].isConnected()) {
             float cv = inputs[CV_GATE_ATTACK_INPUT].getVoltage();
             attack = rescale(cv, -5.f, 5.f, 0.1f, 50.f);
         }
-        
+
         float release = params[GATE_RELEASE_PARAM].getValue();
         if (inputs[CV_GATE_RELEASE_INPUT].isConnected()) {
             float cv = inputs[CV_GATE_RELEASE_INPUT].getVoltage();
             release = rescale(cv, -5.f, 5.f, 10.f, 500.f);
         }
-        
+
         float hold = params[GATE_HOLD_PARAM].getValue();
         if (inputs[CV_GATE_HOLD_INPUT].isConnected()) {
             float cv = inputs[CV_GATE_HOLD_INPUT].getVoltage();
             hold = rescale(cv, -5.f, 5.f, 10.f, 500.f);
         }
-        
         namDsp->setNoiseGate(threshold, attack, release, hold);
-    }
-    
-    // Update tone stack parameters from knobs (convert 0-1 to -12 to +12 dB, with CV)
-    if (namDsp) {
+
         float bass = params[BASS_PARAM].getValue();
         if (inputs[CV_BASS_INPUT].isConnected()) {
             float cv = inputs[CV_BASS_INPUT].getVoltage();
             bass = rescale(cv, -5.f, 5.f, 0.f, 1.f);
         }
         bass = (bass - 0.5f) * 24.f;
-        
+
         float middle = params[MIDDLE_PARAM].getValue();
         if (inputs[CV_MIDDLE_INPUT].isConnected()) {
             float cv = inputs[CV_MIDDLE_INPUT].getVoltage();
             middle = rescale(cv, -5.f, 5.f, 0.f, 1.f);
         }
         middle = (middle - 0.5f) * 24.f;
-        
+
         float treble = params[TREBLE_PARAM].getValue();
         if (inputs[CV_TREBLE_INPUT].isConnected()) {
             float cv = inputs[CV_TREBLE_INPUT].getVoltage();
             treble = rescale(cv, -5.f, 5.f, 0.f, 1.f);
         }
         treble = (treble - 0.5f) * 24.f;
-        
+
         float presence = params[PRESENCE_PARAM].getValue();
         if (inputs[CV_PRESENCE_INPUT].isConnected()) {
             float cv = inputs[CV_PRESENCE_INPUT].getVoltage();
             presence = rescale(cv, -5.f, 5.f, 0.f, 1.f);
         }
         presence = (presence - 0.5f) * 24.f;
-        
+
         float depth = params[DEPTH_PARAM].getValue();
         if (inputs[CV_DEPTH_INPUT].isConnected()) {
             float cv = inputs[CV_DEPTH_INPUT].getVoltage();
             depth = rescale(cv, -5.f, 5.f, 0.f, 1.f);
         }
         depth = (depth - 0.5f) * 24.f;
-        
+
         namDsp->setToneStack(bass, middle, treble, presence, depth);
     }
     
@@ -186,6 +196,21 @@ void NamPlayer::process(const ProcessArgs& args) {
     if (bufferPos >= BLOCK_SIZE) {
         if (namDsp && namDsp->isModelLoaded()) {
             namDsp->process(inputBuffer.data(), outputBuffer.data(), BLOCK_SIZE);
+#if NAMPLAYER_SANITIZE_BLOCK_OUTPUT
+            constexpr float kModuleSoftLimit = 1.5f;
+            for (int i = 0; i < BLOCK_SIZE; i++) {
+                float v = outputBuffer[i];
+                if (!std::isfinite(v)) {
+                    outputBuffer[i] = 0.0f;
+                    continue;
+                }
+
+                float clamped = std::max(-kModuleSoftLimit, std::min(kModuleSoftLimit, v));
+                if (clamped != v) {
+                    outputBuffer[i] = clamped;
+                }
+            }
+#endif
         }
         bufferPos = 0;
     }
@@ -197,6 +222,10 @@ void NamPlayer::process(const ProcessArgs& args) {
         outputGain = rescale(cv, -5.f, 5.f, 0.f, 2.f);
     }
     float finalOutput = output * outputGain;
+    if (!std::isfinite(finalOutput)) {
+        finalOutput = 0.0f;
+    }
+    finalOutput = std::max(-1.5f, std::min(1.5f, finalOutput));
     outputs[AUDIO_OUTPUT].setVoltage(finalOutput * 5.f);
     
     // Update display buffer with output sample (normalized to ±1)
@@ -223,12 +252,22 @@ void NamPlayer::loadModel(const std::string& path) {
     
     isLoading = true;
     loadSuccess = false;
+    const bool fastTanhSetting = useFastTanh;
     
-    loadThread = std::thread([this, path]() {
+    loadThread = std::thread([this, path, fastTanhSetting]() {
         try {
-            auto newDsp = std::make_unique<NamDSP>();
-            
+            std::unique_ptr<NamDSP> newDsp(new NamDSP());
+            newDsp->setEcoModeLevel(ecoModeLevel);
+
+            if (fastTanhSetting) {
+                nam::activations::enableFastTanh();
+            } else {
+                nam::activations::disableFastTanh();
+            }
+
             if (newDsp->loadModel(path)) {
+                INFO("[NAM][load] %s", newDsp->getLoadDiagnostics().c_str());
+
                 // Initialize with current sample rate
                 newDsp->setSampleRate(currentSampleRate.load(std::memory_order_acquire));
                 
@@ -237,6 +276,11 @@ void NamPlayer::loadModel(const std::string& path) {
                 hasPendingDsp.store(true, std::memory_order_release);
                 
                 loadSuccess = true;
+            } else {
+                if (!newDsp->getLoadDiagnostics().empty()) {
+                    WARN("[NAM][load] %s", newDsp->getLoadDiagnostics().c_str());
+                }
+                WARN("Failed to load NAM model: %s", newDsp->getLastLoadError().c_str());
             }
         } catch (const std::exception& e) {
             WARN("Failed to load NAM model: %s", e.what());
@@ -303,6 +347,8 @@ json_t* NamPlayer::dataToJson() {
     std::string path = getModelPath();
     json_object_set_new(rootJ, "modelPath", json_string(path.c_str()));
     json_object_set_new(rootJ, "waveformColor", json_integer(static_cast<int>(waveformColor)));
+    json_object_set_new(rootJ, "ecoModeLevel", json_integer(ecoModeLevel));
+    json_object_set_new(rootJ, "useFastTanh", json_boolean(useFastTanh));
     return rootJ;
 }
 
@@ -321,6 +367,41 @@ void NamPlayer::dataFromJson(json_t* rootJ) {
         if (colorInt >= 0 && colorInt < static_cast<int>(WaveformColor::NUM_COLORS)) {
             waveformColor = static_cast<WaveformColor>(colorInt);
         }
+    }
+
+    json_t* ecoLevelJ = json_object_get(rootJ, "ecoModeLevel");
+    if (ecoLevelJ && json_is_integer(ecoLevelJ)) {
+        ecoModeLevel = static_cast<int>(json_integer_value(ecoLevelJ));
+    } else {
+        // Backward compatibility with old boolean field
+        json_t* ecoJ = json_object_get(rootJ, "ecoMode");
+        if (ecoJ) {
+            ecoModeLevel = json_is_true(ecoJ) ? NamDSP::ECO_ON : NamDSP::ECO_OFF;
+        }
+    }
+
+    if (ecoModeLevel < NamDSP::ECO_OFF) {
+        ecoModeLevel = NamDSP::ECO_OFF;
+    } else if (ecoModeLevel > NamDSP::ECO_ON) {
+        ecoModeLevel = NamDSP::ECO_ON;
+    }
+
+    json_t* useFastTanhJ = json_object_get(rootJ, "useFastTanh");
+    if (useFastTanhJ) {
+        useFastTanh = json_is_true(useFastTanhJ);
+    }
+
+    if (namDsp) {
+        namDsp->setEcoModeLevel(ecoModeLevel);
+    }
+    if (pendingDsp) {
+        pendingDsp->setEcoModeLevel(ecoModeLevel);
+    }
+
+    if (useFastTanh) {
+        nam::activations::enableFastTanh();
+    } else {
+        nam::activations::disableFastTanh();
     }
 }
 
@@ -435,6 +516,44 @@ void NamPlayerWidget::appendContextMenu(Menu* menu) {
     menu->addChild(createMenuItem("Unload Model", "", [=]() {
         module->unloadModel();
     }, !module->namDsp || !module->namDsp->isModelLoaded()));
+
+    menu->addChild(createSubmenuItem("Eco Mode", "", [=](Menu* submenu) {
+        struct EcoOption {
+            int level;
+            const char* label;
+        };
+        const EcoOption options[] = {
+            {NamDSP::ECO_OFF, "Off"},
+            {NamDSP::ECO_ON, "On"},
+        };
+
+        for (const auto& option : options) {
+            submenu->addChild(createMenuItem(option.label,
+                module->ecoModeLevel == option.level ? "✓" : "",
+                [=]() {
+                    module->ecoModeLevel = option.level;
+                    if (module->namDsp) {
+                        module->namDsp->setEcoModeLevel(module->ecoModeLevel);
+                    }
+                    if (module->pendingDsp) {
+                        module->pendingDsp->setEcoModeLevel(module->ecoModeLevel);
+                    }
+                }
+            ));
+        }
+    }));
+
+    menu->addChild(createMenuItem("Use Fast Tanh",
+        module->useFastTanh ? "✓" : "",
+        [=]() {
+            module->useFastTanh = !module->useFastTanh;
+            if (module->useFastTanh) {
+                nam::activations::enableFastTanh();
+            } else {
+                nam::activations::disableFastTanh();
+            }
+        }
+    ));
 
     std::string modelName = module->getModelName();
     if (!modelName.empty()) {
@@ -558,6 +677,26 @@ void OutputDisplay::drawWaveform(const DrawArgs& args) {
         nvgRoundedRect(args.vg, x, centerY, kBarWidth, barHeight, 0.5f);
         nvgFillPaint(args.vg, gradient);
         nvgFill(args.vg);
+    }
+
+    // Eco mode badge
+    if (module->ecoModeLevel != NamDSP::ECO_OFF) {
+        const char* ecoLabel = "ECO ON";
+
+        nvgFontSize(args.vg, 11.0f);
+        nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+        nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
+
+        const float textX = box.size.x - 6.0f;
+        const float textY = 4.0f;
+
+        // Subtle shadow for readability
+        nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 180));
+        nvgText(args.vg, textX + 1.0f, textY + 1.0f, ecoLabel, NULL);
+
+        // Foreground color
+        nvgFillColor(args.vg, nvgRGBA(150, 220, 255, 220));
+        nvgText(args.vg, textX, textY, ecoLabel, NULL);
     }
 }
 

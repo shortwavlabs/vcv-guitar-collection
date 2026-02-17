@@ -80,7 +80,8 @@ public:
         irData[slot] = std::move(loader);
         
         // Create new convolver with the IR
-        auto newConvolver = std::make_unique<rack::dsp::RealTimeConvolver>(BLOCK_SIZE);
+        std::unique_ptr<rack::dsp::RealTimeConvolver> newConvolver(
+            new rack::dsp::RealTimeConvolver(BLOCK_SIZE));
         const auto& samples = irData[slot].getSamples();
         if (!samples.empty()) {
             newConvolver->setKernel(samples.data(), samples.size());
@@ -101,8 +102,9 @@ public:
                      const std::string& irPath, const std::string& irName) {
         if (slot < 0 || slot > 1) return;
         if (samples.empty()) return;
-        
-        auto newConvolver = std::make_unique<rack::dsp::RealTimeConvolver>(BLOCK_SIZE);
+
+        std::unique_ptr<rack::dsp::RealTimeConvolver> newConvolver(
+            new rack::dsp::RealTimeConvolver(BLOCK_SIZE));
         newConvolver->setKernel(samples.data(), samples.size());
         
         convolvers[slot] = std::move(newConvolver);
@@ -285,26 +287,26 @@ private:
     void updateFilters(float lpFreq, float hpFreq) {
         // Only update if frequencies changed significantly
         if (std::abs(lpFreq - lastLpFreq) > 1.f) {
-            float lpNorm = std::clamp(lpFreq / sampleRate, 0.001f, 0.499f);
+            float lpNorm = std::max(0.001f, std::min(0.499f, lpFreq / sampleRate));
             lpf.setParameters(rack::dsp::TBiquadFilter<float>::LOWPASS, lpNorm, 0.707f, 1.f);
             lastLpFreq = lpFreq;
         }
-        
+
         if (std::abs(hpFreq - lastHpFreq) > 1.f) {
-            float hpNorm = std::clamp(hpFreq / sampleRate, 0.001f, 0.499f);
+            float hpNorm = std::max(0.001f, std::min(0.499f, hpFreq / sampleRate));
             hpf.setParameters(rack::dsp::TBiquadFilter<float>::HIGHPASS, hpNorm, 0.707f, 1.f);
             lastHpFreq = hpFreq;
         }
     }
-    
+
     /**
      * Force update filters (for sample rate change)
      */
     void forceUpdateFilters() {
-        float lpNorm = std::clamp(lastLpFreq / sampleRate, 0.001f, 0.499f);
+        float lpNorm = std::max(0.001f, std::min(0.499f, lastLpFreq / sampleRate));
         lpf.setParameters(rack::dsp::TBiquadFilter<float>::LOWPASS, lpNorm, 0.707f, 1.f);
-        
-        float hpNorm = std::clamp(lastHpFreq / sampleRate, 0.001f, 0.499f);
+
+        float hpNorm = std::max(0.001f, std::min(0.499f, lastHpFreq / sampleRate));
         hpf.setParameters(rack::dsp::TBiquadFilter<float>::HIGHPASS, hpNorm, 0.707f, 1.f);
     }
 };

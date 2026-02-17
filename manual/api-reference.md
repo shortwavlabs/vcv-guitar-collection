@@ -19,7 +19,7 @@ Complete technical reference for Guitar Tools plugin developers.
 
 ## Overview
 
-The Guitar Tools plugin is built on VCV Rack's Module API and integrates with the Neural Amp Modeler Core library. This reference documents the public API for both module usage and extension development.
+The Guitar Tools plugin is built on VCV Rack's Module API and uses an in-tree NAM DSP implementation (`nam_rack`). This reference documents the public API for both module usage and extension development.
 
 **Plugin Architecture:**
 ```
@@ -129,6 +129,20 @@ enum LightId {
     LIGHTS_LEN
 };
 ```
+
+#### Context Menu Options
+
+`NamPlayer` exposes an **Eco Mode** context-menu setting:
+
+- **Off**: Full processing quality (default)
+- **On**: Reduced CPU usage
+
+`NamPlayer` also exposes a **Use Fast Tanh** context-menu toggle:
+
+- **Enabled (default)**: Uses fast tanh approximation for activation paths.
+- **Disabled**: Uses exact tanh behavior.
+
+The module persists these states in patch data, with backward compatibility for older patches that stored a legacy boolean eco flag.
 
 #### Public Methods
 
@@ -871,7 +885,7 @@ void process(const ProcessArgs& args) override {
 
 ### Neural Amp Modeler Core
 
-- **Version**: Latest from `sdatkinson/NeuralAmpModelerCore`
+- **Version**: In-tree `nam_rack` implementation (no external NAM core dependency)
 - **NAM Format**: Compatible with `.nam` v1.x format
 
 ### Breaking Changes
