@@ -122,18 +122,20 @@ public:
         const int K = a.cols();
         const int N = b.cols();
 
-        out.setZero();
+        // Column-major friendly traversal:
+        // - out.col(j) is contiguous
+        // - a.col(k) is contiguous
+        // - innermost i-loop is stride-1 on both arrays
+        for (int j = 0; j < N; j++) {
+            float* out_col_j = out.col(j);
+            std::memset(out_col_j, 0, static_cast<size_t>(M) * sizeof(float));
 
-        // Standard triple loop, optimized for column-major
-        // Inner loop iterates over columns of B (cache-friendly)
-        for (int k = 0; k < K; k++) {
-            for (int i = 0; i < M; i++) {
-                const float a_ik = a(i, k);
-                float* out_col = out.data();
-                const float* b_col = b.data();
+            for (int k = 0; k < K; k++) {
+                const float b_kj = b(k, j);
+                const float* a_col_k = a.col(k);
 
-                for (int j = 0; j < N; j++) {
-                    out_col[j * M + i] += a_ik * b_col[j * K + k];
+                for (int i = 0; i < M; i++) {
+                    out_col_j[i] += a_col_k[i] * b_kj;
                 }
             }
         }
