@@ -93,6 +93,8 @@ struct BiquadFilter {
  * and NAM processing since distortion amplifies noise.
  */
 struct NoiseGate {
+    static constexpr float PARAM_EPSILON = 1.0e-4f;
+
     // Parameters
     float threshold = -60.f;    // dB (default, range: -80 to 0)
     float attack = 0.0005f;     // seconds (range: 0.1-50 ms)
@@ -110,6 +112,10 @@ struct NoiseGate {
     float envAttack = 0.f, envRelease = 0.f;
     float gainAttack = 0.f, gainRelease = 0.f;
     double sampleRate = 48000.0;
+
+    NoiseGate() {
+        recalculateCoefficients();
+    }
     
     void setSampleRate(double sr) {
         sampleRate = sr;
@@ -117,10 +123,21 @@ struct NoiseGate {
     }
     
     void setParameters(float threshDb, float attackMs, float releaseMs, float holdMs) {
+        const float newAttack = attackMs / 1000.f;
+        const float newRelease = releaseMs / 1000.f;
+        const float newHold = holdMs / 1000.f;
+
+        if (std::fabs(threshold - threshDb) < PARAM_EPSILON
+            && std::fabs(attack - newAttack) < PARAM_EPSILON
+            && std::fabs(release - newRelease) < PARAM_EPSILON
+            && std::fabs(hold - newHold) < PARAM_EPSILON) {
+            return;
+        }
+
         threshold = threshDb;
-        attack = attackMs / 1000.f;
-        release = releaseMs / 1000.f;
-        hold = holdMs / 1000.f;
+        attack = newAttack;
+        release = newRelease;
+        hold = newHold;
         recalculateCoefficients();
     }
     
@@ -130,8 +147,10 @@ struct NoiseGate {
         envRelease = 1.f - std::exp(-1.f / (0.05f * static_cast<float>(sampleRate)));
         
         // Gain smoothing coefficients
-        gainAttack = 1.f - std::exp(-1.f / (attack * static_cast<float>(sampleRate)));
-        gainRelease = 1.f - std::exp(-1.f / (release * static_cast<float>(sampleRate)));
+        const float attackSafe = std::max(attack, 1.0e-6f);
+        const float releaseSafe = std::max(release, 1.0e-6f);
+        gainAttack = 1.f - std::exp(-1.f / (attackSafe * static_cast<float>(sampleRate)));
+        gainRelease = 1.f - std::exp(-1.f / (releaseSafe * static_cast<float>(sampleRate)));
     }
     
     float process(float sample) {
@@ -193,6 +212,8 @@ struct NoiseGate {
  * - Presence (Peaking, 3.5 kHz) - Upper-mid articulation
  */
 struct ToneStack {
+    static constexpr float PARAM_EPSILON = 1.0e-4f;
+
     BiquadFilter depth;     // Peaking at 80 Hz
     BiquadFilter bass;      // Low shelf at 100 Hz
     BiquadFilter middle;    // Peaking at 650 Hz
@@ -201,6 +222,7 @@ struct ToneStack {
     
     double sampleRate = 48000.0;
     float bassDb = 0.f, midDb = 0.f, trebleDb = 0.f, presenceDb = 0.f, depthDb = 0.f;
+    bool active = false;
     
     void setSampleRate(double sr) {
         sampleRate = sr;
@@ -208,11 +230,31 @@ struct ToneStack {
     }
     
     void setParameters(float bassGain, float midGain, float trebleGain, float presenceGain, float depthGain) {
+        if (std::fabs(bassDb - bassGain) < PARAM_EPSILON
+            && std::fabs(midDb - midGain) < PARAM_EPSILON
+            && std::fabs(trebleDb - trebleGain) < PARAM_EPSILON
+            && std::fabs(presenceDb - presenceGain) < PARAM_EPSILON
+            && std::fabs(depthDb - depthGain) < PARAM_EPSILON) {
+            return;
+        }
+
         bassDb = bassGain;
         midDb = midGain;
         trebleDb = trebleGain;
         presenceDb = presenceGain;
         depthDb = depthGain;
+
+        const bool newActive = std::fabs(bassDb) > PARAM_EPSILON
+                            || std::fabs(midDb) > PARAM_EPSILON
+                            || std::fabs(trebleDb) > PARAM_EPSILON
+                            || std::fabs(presenceDb) > PARAM_EPSILON
+                            || std::fabs(depthDb) > PARAM_EPSILON;
+
+        if (newActive != active) {
+            active = newActive;
+            reset();
+        }
+
         updateFilters();
     }
     
@@ -225,6 +267,9 @@ struct ToneStack {
     }
     
     float process(float sample) {
+        if (!active) {
+            return sample;
+        }
         sample = depth.process(sample);
         sample = bass.process(sample);
         sample = middle.process(sample);
@@ -232,6 +277,8 @@ struct ToneStack {
         sample = presence.process(sample);
         return sample;
     }
+
+    bool isActive() const { return active; }
     
     void reset() {
         depth.reset();
@@ -364,17 +411,18 @@ public:
         if (numFrames > static_cast<int>(gatedInputBuffer.size())) {
             gatedInputBuffer.resize(numFrames, 0.f);
         }
+        float maxAbsGated = 0.0f;
         for (int i = 0; i < numFrames; i++) {
-            gatedInputBuffer[i] = noiseGate.process(input[i]);
-        }
-
-        bool nearSilent = true;
-        for (int i = 0; i < numFrames; i++) {
-            if (std::fabs(gatedInputBuffer[i]) > IDLE_GATE_EPSILON) {
-                nearSilent = false;
-                break;
+            const float gated = noiseGate.process(input[i]);
+            gatedInputBuffer[i] = gated;
+            const float absGated = std::fabs(gated);
+            if (absGated > maxAbsGated) {
+                maxAbsGated = absGated;
             }
         }
+
+        const bool nearSilent = maxAbsGated <= IDLE_GATE_EPSILON;
+        const bool toneStackActive = toneStack.isActive();
 
         if (!noiseGate.isOpen && nearSilent) {
             idleGateSilentBlockCount++;
@@ -383,9 +431,13 @@ public:
         }
 
         if (idleGateSilentBlockCount >= IDLE_GATE_MIN_BLOCKS) {
-            for (int i = 0; i < numFrames; i++) {
-                float y = toneStack.process(0.0f);
-                output[i] = std::isfinite(y) ? y : 0.0f;
+            if (!toneStackActive) {
+                std::fill(output, output + numFrames, 0.0f);
+            } else {
+                for (int i = 0; i < numFrames; i++) {
+                    float y = toneStack.process(0.0f);
+                    output[i] = std::isfinite(y) ? y : 0.0f;
+                }
             }
             return;
         }
@@ -399,9 +451,16 @@ public:
                 modelOutputBuffer.resize(numFrames, 0.f);
             }
             model->process(gatedInputBuffer.data(), modelOutputBuffer.data(), numFrames);
-            for (int i = 0; i < numFrames; i++) {
-                float y = toneStack.process(modelOutputBuffer[i]);
-                output[i] = std::isfinite(y) ? y : 0.0f;
+            if (!toneStackActive) {
+                for (int i = 0; i < numFrames; i++) {
+                    const float y = modelOutputBuffer[i];
+                    output[i] = std::isfinite(y) ? y : 0.0f;
+                }
+            } else {
+                for (int i = 0; i < numFrames; i++) {
+                    float y = toneStack.process(modelOutputBuffer[i]);
+                    output[i] = std::isfinite(y) ? y : 0.0f;
+                }
             }
         } else {
             // Resampling required using Rack's SampleRateConverter
@@ -437,9 +496,16 @@ public:
             }
 
             // Apply tone stack to output
-            for (int i = 0; i < numFrames; i++) {
-                float y = toneStack.process(output[i]);
-                output[i] = std::isfinite(y) ? y : 0.0f;
+            if (!toneStackActive) {
+                for (int i = 0; i < numFrames; i++) {
+                    const float y = output[i];
+                    output[i] = std::isfinite(y) ? y : 0.0f;
+                }
+            } else {
+                for (int i = 0; i < numFrames; i++) {
+                    float y = toneStack.process(output[i]);
+                    output[i] = std::isfinite(y) ? y : 0.0f;
+                }
             }
         }
     }

@@ -136,12 +136,14 @@ void RingBuffer::rewind() {
     assert(copy_start >= 0 && copy_start < (long)m_storage.cols()
            && "Copy start position must be within storage bounds");
 
-    // Copy m_maxLookback samples from before the write position to the start
-    // We do this column by column to respect the column-major layout
+    // Copy m_maxLookback samples from before the write position to the start.
+    // Columns are contiguous in memory (column-major), so memcpy per column.
+    const size_t colBytes = static_cast<size_t>(m_storage.rows()) * sizeof(float);
     for (long col = 0; col < m_maxLookback; col++) {
-        for (int row = 0; row < m_storage.rows(); row++) {
-            m_storage(row, col) = m_storage(row, copy_start + col);
-        }
+        std::memcpy(
+            m_storage.col(static_cast<int>(col)),
+            m_storage.col(static_cast<int>(copy_start + col)),
+            colBytes);
     }
 
     // Reset write position to just after the copied history
