@@ -186,9 +186,13 @@ Unit tests are available to verify the DSP components:
 
 # Run tests with code coverage analysis
 ./run_tests_with_coverage.sh
+
+# Run NAM performance benchmark baseline
+./run_performance_benchmarks.sh
 ```
 
 The coverage script will display per-file and overall coverage statistics after running all tests.
+Performance benchmark artifacts are written to `docs/perf/`.
 
 For more detailed build instructions and troubleshooting, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
