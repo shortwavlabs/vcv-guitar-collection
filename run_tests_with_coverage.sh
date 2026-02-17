@@ -114,7 +114,29 @@ fi
 if ! "$OUT_BIN"; then
   EXIT_CODE=$?
   echo ""
-  echo "Tests failed with exit code $EXIT_CODE"
+  echo "Plugin tests failed with exit code $EXIT_CODE"
+  exit $EXIT_CODE
+fi
+
+echo ""
+echo "========================================="
+echo "Running NAM Rack Tests"
+echo "========================================="
+echo ""
+
+NAM_RACK_BIN="${OUT_DIR}/test_nam_rack_coverage"
+
+# Compile nam_rack tests (standalone, no NAM/Eigen dependencies)
+"$CXX" -std=c++11 -Wall $COVERAGE_FLAGS \
+  -Isrc \
+  -o "$NAM_RACK_BIN" \
+  src/tests/test_nam_rack.cpp \
+  src/dsp/nam_rack/ring_buffer.cpp
+
+if ! "$NAM_RACK_BIN"; then
+  EXIT_CODE=$?
+  echo ""
+  echo "NAM Rack tests failed with exit code $EXIT_CODE"
   exit $EXIT_CODE
 fi
 
@@ -128,17 +150,19 @@ echo ""
 mv ./*.gcda "$COV_DIR/" 2>/dev/null || true
 mv ./*.gcno "$COV_DIR/" 2>/dev/null || true
 
+# Generate coverage for the main test file
+$GCOV_TOOL -o "$COV_DIR" -l "$COV_DIR"/test_with_coverage-test_swv_guitar_collection.gcno > /dev/null 2>&1 || true
+
+# Generate coverage for nam_rack test file
+$GCOV_TOOL -o "$COV_DIR" -l "$COV_DIR"/test_nam_rack_coverage-test_nam_rack.gcno > /dev/null 2>&1 || true
+
+# Move generated .gcov files to coverage directory
+mv ./*.gcov "$COV_DIR/" 2>/dev/null || true
+
 if [ -z "$GCOV_TOOL" ]; then
   echo "Coverage tools not available. Skipping detailed coverage report."
   exit 0
 fi
-
-# Generate coverage for the test file
-# The .gcno/.gcda files are prefixed with the binary name
-$GCOV_TOOL -o "$COV_DIR" -l "$COV_DIR"/test_with_coverage-test_swv_guitar_collection.gcno > /dev/null 2>&1 || true
-
-# Move generated .gcov files to coverage directory
-mv ./*.gcov "$COV_DIR/" 2>/dev/null || true
 
 echo "Coverage Summary:"
 echo "-----------------"

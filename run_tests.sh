@@ -84,11 +84,33 @@ elif [[ "$UNAME_S" == "MINGW"* || "$UNAME_S" == "MSYS"* ]]; then
   # Windows: add Rack SDK to PATH for DLL loading
   export PATH="$(pwd)/dep/Rack-SDK:$PATH"
 fi
-if "$OUT_BIN"; then
-  echo "Tests passed."
-  exit 0
-else
+if ! "$OUT_BIN"; then
   EXIT_CODE=$?
-  echo "Tests failed with exit code $EXIT_CODE"
+  echo "Plugin tests failed with exit code $EXIT_CODE"
   exit $EXIT_CODE
 fi
+
+echo ""
+echo "========================================="
+echo "Running NAM Rack Tests"
+echo "========================================="
+echo ""
+
+NAM_RACK_BIN="${OUT_DIR}/build_test_nam_rack"
+
+# Compile nam_rack tests (standalone, no NAM/Eigen dependencies)
+"$CXX" -std=c++11 -O2 -Wall \
+  -Isrc \
+  -o "$NAM_RACK_BIN" \
+  src/tests/test_nam_rack.cpp \
+  src/dsp/nam_rack/ring_buffer.cpp
+
+if ! "$NAM_RACK_BIN"; then
+  EXIT_CODE=$?
+  echo "NAM Rack tests failed with exit code $EXIT_CODE"
+  exit $EXIT_CODE
+fi
+
+echo ""
+echo "All tests passed."
+exit 0
