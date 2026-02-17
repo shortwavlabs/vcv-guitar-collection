@@ -1,6 +1,7 @@
 #include "NamPlayer.hpp"
 #include <osdialog.h>
 #include <algorithm>
+#include <cmath>
 
 NamPlayer::NamPlayer() {
     config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -46,8 +47,8 @@ NamPlayer::NamPlayer() {
     outputBuffer.resize(BLOCK_SIZE, 0.f);
     displayBuffer.resize(DISPLAY_BUFFER_SIZE, 0.f);
 
-    // Enable fast tanh for better performance
-    nam::activations::enableFastTanh();
+    // Use exact tanh for numerical stability in deep residual NAM models
+    nam::activations::disableFastTanh();
 }
 
 NamPlayer::~NamPlayer() {
@@ -186,6 +187,19 @@ void NamPlayer::process(const ProcessArgs& args) {
     if (bufferPos >= BLOCK_SIZE) {
         if (namDsp && namDsp->isModelLoaded()) {
             namDsp->process(inputBuffer.data(), outputBuffer.data(), BLOCK_SIZE);
+            constexpr float kModuleSoftLimit = 1.5f;
+            for (int i = 0; i < BLOCK_SIZE; i++) {
+                float v = outputBuffer[i];
+                if (!std::isfinite(v)) {
+                    outputBuffer[i] = 0.0f;
+                    continue;
+                }
+
+                float clamped = std::max(-kModuleSoftLimit, std::min(kModuleSoftLimit, v));
+                if (clamped != v) {
+                    outputBuffer[i] = clamped;
+                }
+            }
         }
         bufferPos = 0;
     }
@@ -197,6 +211,10 @@ void NamPlayer::process(const ProcessArgs& args) {
         outputGain = rescale(cv, -5.f, 5.f, 0.f, 2.f);
     }
     float finalOutput = output * outputGain;
+    if (!std::isfinite(finalOutput)) {
+        finalOutput = 0.0f;
+    }
+    finalOutput = std::max(-1.5f, std::min(1.5f, finalOutput));
     outputs[AUDIO_OUTPUT].setVoltage(finalOutput * 5.f);
     
     // Update display buffer with output sample (normalized to ±1)
@@ -229,6 +247,8 @@ void NamPlayer::loadModel(const std::string& path) {
             std::unique_ptr<NamDSP> newDsp(new NamDSP());
 
             if (newDsp->loadModel(path)) {
+                INFO("[NAM][load] %s", newDsp->getLoadDiagnostics().c_str());
+
                 // Initialize with current sample rate
                 newDsp->setSampleRate(currentSampleRate.load(std::memory_order_acquire));
                 
@@ -237,6 +257,11 @@ void NamPlayer::loadModel(const std::string& path) {
                 hasPendingDsp.store(true, std::memory_order_release);
                 
                 loadSuccess = true;
+            } else {
+                if (!newDsp->getLoadDiagnostics().empty()) {
+                    WARN("[NAM][load] %s", newDsp->getLoadDiagnostics().c_str());
+                }
+                WARN("Failed to load NAM model: %s", newDsp->getLastLoadError().c_str());
             }
         } catch (const std::exception& e) {
             WARN("Failed to load NAM model: %s", e.what());

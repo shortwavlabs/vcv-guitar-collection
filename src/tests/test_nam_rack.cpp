@@ -17,6 +17,8 @@
 #include <cmath>
 #include <cstring>
 #include <chrono>
+#include <limits>
+#include <sstream>
 
 #include "dsp/nam_rack/matrix.h"
 #include "dsp/nam_rack/ring_buffer.h"
@@ -2125,6 +2127,97 @@ void test_matrix_extended(TestContext& ctx) {
 }
 
 // ============================================================================
+// Real model integration test
+// ============================================================================
+
+void test_real_model_stability(TestContext& ctx) {
+    ctx.current_test = "real_model_stability";
+
+    int section_passed = ctx.passed;
+    int section_failed = ctx.failed;
+
+    std::cout << "Testing real model stability..." << std::endl;
+
+    const std::string modelPath = "res/models/Phillipe P Bug333-Lead-NoDrive-Cab-ESR0,007.nam";
+
+    try {
+        auto model = nam::loadModel(modelPath);
+        ctx.assertTrue(model != nullptr, "Real model loaded");
+
+        if (model) {
+            model->reset(48000.0, 2048);
+
+            const int blockSize = 128;
+            std::vector<NAM_SAMPLE> input(blockSize);
+            std::vector<NAM_SAMPLE> output(blockSize);
+
+            const auto runScenario = [&](const char* label,
+                                         int blocks,
+                                         float amp,
+                                         float dc,
+                                         float toneHz,
+                                         bool addTransient,
+                                         bool& allFiniteOut,
+                                         float& maxAbsOut) {
+                allFiniteOut = true;
+                maxAbsOut = 0.0f;
+
+                for (int block = 0; block < blocks; ++block) {
+                    const float phase = static_cast<float>(block * blockSize) / 48000.0f;
+                    for (int i = 0; i < blockSize; ++i) {
+                        const float t = phase + static_cast<float>(i) / 48000.0f;
+                        float sample = amp * std::sin(2.0f * 3.1415926535f * toneHz * t) + dc;
+                        if (addTransient && ((block % 37) == 0) && i < 8) {
+                            sample += (i & 1) ? -0.9f : 0.9f;
+                        }
+                        input[i] = static_cast<NAM_SAMPLE>(sample);
+                    }
+
+                    model->process(input.data(), output.data(), blockSize);
+
+                    for (int i = 0; i < blockSize; ++i) {
+                        const float y = output[i];
+                        if (!std::isfinite(y)) {
+                            allFiniteOut = false;
+                        } else {
+                            maxAbsOut = std::max(maxAbsOut, std::fabs(y));
+                        }
+                    }
+                }
+
+                std::stringstream ssFinite;
+                ssFinite << "Real model output finite (" << label << ")";
+                const std::string finiteMsg = ssFinite.str();
+                ctx.assertTrue(allFiniteOut, finiteMsg.c_str());
+
+                std::stringstream ssBound;
+                ssBound << "Real model bounded output (" << label << ")";
+                const std::string boundMsg = ssBound.str();
+                ctx.assertTrue(maxAbsOut < 1000.0f, boundMsg.c_str());
+            };
+
+            bool allFinite = true;
+            float maxAbs = 0.0f;
+
+            // Baseline low-level sine
+            runScenario("baseline", 300, 0.1f, 0.0f, 220.0f, false, allFinite, maxAbs);
+
+            // Guitar-like stronger signal
+            runScenario("hot_input", 1200, 0.9f, 0.0f, 110.0f, true, allFinite, maxAbs);
+
+            // DC-offset stress (mirrors rack-level edge cases)
+            runScenario("dc_offset", 1200, 0.7f, 0.35f, 82.41f, true, allFinite, maxAbs);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Real model stability test exception: " << e.what() << std::endl;
+        ctx.assertTrue(false, "Real model stability test should not throw");
+    }
+
+    std::cout << "  Real model stability tests: " << (ctx.passed - section_passed)
+              << " passed, " << (ctx.failed - section_failed) << " failed" << std::endl;
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -2153,6 +2246,7 @@ int main() {
     test_nam::test_linear_extended(ctx);
     test_nam::test_const_matrix_block(ctx);
     test_nam::test_matrix_extended(ctx);
+    test_nam::test_real_model_stability(ctx);
     test_nam::test_performance(ctx);
 
     // Report

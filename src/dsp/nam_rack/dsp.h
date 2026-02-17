@@ -15,12 +15,10 @@
 #include <string>
 #include <vector>
 
-// Sample type - can be float or double
-#ifdef NAM_SAMPLE_FLOAT
-    #define NAM_SAMPLE float
-#else
-    #define NAM_SAMPLE double
-#endif
+// Sample type for NAM core processing.
+// Must be consistent across ALL translation units to avoid ABI/type mismatch.
+// The Rack plugin uses float buffers end-to-end, so fix this to float.
+#define NAM_SAMPLE float
 
 #define NAM_UNKNOWN_EXPECTED_SAMPLE_RATE -1.0
 

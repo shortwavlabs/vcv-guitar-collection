@@ -27,6 +27,8 @@ void Layer::setMaxBufferSize(int maxBufferSize) {
     long z_channels = mConv.getOutChannels();
     mZ.resize(z_channels, maxBufferSize);
     mZ.setZero();
+    mTopRows.resize(mBottleneck, maxBufferSize);
+    mTopRows.setZero();
 
     m1x1.setMaxBufferSize(maxBufferSize);
 
@@ -58,22 +60,19 @@ void Layer::process(const Matrix& input, const Matrix& condition, int num_frames
 
     // Step 2 & 3: Activation and 1x1
     if (!mGated) {
-        // Simple activation
-        mActivation->apply(mZ);
+        // Simple activation on active frames only
+        for (int f = 0; f < num_frames; f++) {
+            mActivation->apply(mZ.col(f), mZ.rows());
+        }
         m1x1.process(mZ, num_frames);
     } else {
         // Gated activation: tanh(z[0:b]) * sigmoid(z[b:2b])
-        // Process column by column to handle non-contiguous memory
+        // Process column by column to handle non-contiguous row blocks
+        activations::Activation* sigmoidActivation = activations::Activation::get("Sigmoid");
         for (int f = 0; f < num_frames; f++) {
-            // Apply activation to top half
-            for (int c = 0; c < mBottleneck; c++) {
-                mZ(c, f) = std::tanh(mZ(c, f));
-            }
-            // Apply sigmoid to bottom half
-            for (int c = 0; c < mBottleneck; c++) {
-                float x = mZ(mBottleneck + c, f);
-                mZ(mBottleneck + c, f) = 1.0f / (1.0f + std::exp(-x));
-            }
+            float* col = mZ.col(f);
+            mActivation->apply(col, mBottleneck);
+            sigmoidActivation->apply(col + mBottleneck, mBottleneck);
         }
 
         // Elementwise multiply: z[0:b] *= z[b:2b]
@@ -84,14 +83,12 @@ void Layer::process(const Matrix& input, const Matrix& condition, int num_frames
         }
 
         // Process through 1x1 with just top rows
-        Matrix topRows;
-        topRows.resize(mBottleneck, num_frames);
         for (int c = 0; c < mBottleneck; c++) {
             for (int f = 0; f < num_frames; f++) {
-                topRows(c, f) = mZ(c, f);
+                mTopRows(c, f) = mZ(c, f);
             }
         }
-        m1x1.process(topRows, num_frames);
+        m1x1.process(mTopRows, num_frames);
     }
 
     // Store output to head (skip connection)
@@ -166,6 +163,7 @@ void LayerArray::process(const Matrix& layer_inputs, const Matrix& condition, in
 void LayerArray::process(const Matrix& layer_inputs, const Matrix& condition,
                          const Matrix& head_inputs, int num_frames) {
     // Copy head inputs from previous layer array
+    mHeadInputs.setZero();
     for (int c = 0; c < mHeadInputs.rows() && c < head_inputs.rows(); c++) {
         for (int f = 0; f < num_frames; f++) {
             mHeadInputs(c, f) = head_inputs(c, f);

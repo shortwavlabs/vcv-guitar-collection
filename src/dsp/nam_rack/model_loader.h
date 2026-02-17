@@ -31,9 +31,15 @@ struct ModelConfig {
     std::string metadataJson;  // Raw JSON string for metadata
     std::vector<float> weights;
     double expectedSampleRate;
+    size_t actualWeightCount;
+    size_t expectedWeightCount;
+    std::string layerDimsSummary;
+    std::string loadDiagnostics;
 
     ModelConfig()
-        : expectedSampleRate(-1.0) {}
+        : expectedSampleRate(-1.0)
+        , actualWeightCount(0)
+        , expectedWeightCount(0) {}
 };
 
 /**

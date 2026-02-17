@@ -534,8 +534,10 @@ inline Activation* Activation::get(const std::string& name) {
     static ActivationTanh s_tanh;
     static ActivationFastTanh s_fastTanh;
     static ActivationHardTanh s_hardTanh;
+    static ActivationLeakyHardTanh s_leakyHardTanh;
     static ActivationReLU s_relu;
     static ActivationLeakyReLU s_leakyRelu;
+    static ActivationPReLU s_prelu(0.01f);
     static ActivationSigmoid s_sigmoid;
     static ActivationFastSigmoid s_fastSigmoid;
     static ActivationSwish s_swish;
@@ -546,17 +548,16 @@ inline Activation* Activation::get(const std::string& name) {
         return g_useFastTanh ? static_cast<Activation*>(&s_fastTanh)
                              : static_cast<Activation*>(&s_tanh);
     }
-    if (name == "FastTanh" || name == "fast_tanh") return &s_fastTanh;
-    if (name == "HardTanh" || name == "hard_tanh") return &s_hardTanh;
+    if (name == "FastTanh" || name == "fast_tanh" || name == "Fasttanh") return &s_fastTanh;
+    if (name == "HardTanh" || name == "hard_tanh" || name == "Hardtanh") return &s_hardTanh;
     if (name == "ReLU" || name == "relu") return &s_relu;
     if (name == "LeakyReLU" || name == "leaky_relu") return &s_leakyRelu;
-    if (name == "Sigmoid" || name == "sigmoid") {
-        return g_useFastTanh ? static_cast<Activation*>(&s_fastSigmoid)
-                             : static_cast<Activation*>(&s_sigmoid);
-    }
+    if (name == "Sigmoid" || name == "sigmoid") return &s_sigmoid;
     if (name == "FastSigmoid" || name == "fast_sigmoid") return &s_fastSigmoid;
-    if (name == "Swish" || name == "swish") return &s_swish;
-    if (name == "HardSwish" || name == "hard_swish" || name == "hswish") return &s_hardSwish;
+    if (name == "Swish" || name == "swish" || name == "SiLU") return &s_swish;
+    if (name == "HardSwish" || name == "hard_swish" || name == "hswish" || name == "Hardswish") return &s_hardSwish;
+    if (name == "LeakyHardTanh" || name == "LeakyHardtanh" || name == "leaky_hardtanh") return &s_leakyHardTanh;
+    if (name == "PReLU" || name == "prelu") return &s_prelu;
 
     // Default to identity if unknown
     return &s_identity;

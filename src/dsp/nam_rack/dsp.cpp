@@ -100,10 +100,32 @@ void Buffer::advanceInputBuffer(int num_frames) {
 }
 
 void Buffer::updateBuffers(NAM_SAMPLE* input, int num_frames) {
+    const long minimum_input_buffer_size = static_cast<long>(mReceptiveField) +
+        static_cast<long>(32) * static_cast<long>(num_frames);
+
+    const long current_input_buffer_size =
+        static_cast<long>(mInputBuffer.size() / INPUT_BUFFER_CHANNELS);
+
+    if (current_input_buffer_size < minimum_input_buffer_size) {
+        long new_buffer_size = 2;
+        while (new_buffer_size < minimum_input_buffer_size) {
+            new_buffer_size *= 2;
+        }
+        mInputBuffer.resize(static_cast<size_t>(INPUT_BUFFER_CHANNELS * new_buffer_size), 0.0f);
+    }
+
+    const long input_buffer_size = static_cast<long>(mInputBuffer.size() / INPUT_BUFFER_CHANNELS);
+    if (mInputBufferOffset + num_frames > input_buffer_size) {
+        rewindBuffers();
+    }
+
     // Copy input to buffer at current offset
     for (int i = 0; i < num_frames; i++) {
         mInputBuffer[mInputBufferOffset + i] = static_cast<float>(input[i]);
     }
+
+    mOutputBuffer.resize(static_cast<size_t>(num_frames));
+    std::fill(mOutputBuffer.begin(), mOutputBuffer.end(), 0.0f);
 }
 
 void Buffer::rewindBuffers() {

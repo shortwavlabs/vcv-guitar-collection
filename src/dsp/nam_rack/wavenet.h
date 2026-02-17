@@ -49,6 +49,7 @@ private:
     Conv1x1 mInputMixin;       // Condition input mixing
     Conv1x1 m1x1;              // Output projection
     Matrix mZ;                 // Internal activation state
+    Matrix mTopRows;           // Preallocated gated top-row scratch
     Matrix mOutputNextLayer;   // Residual output (input + 1x1 output)
     Matrix mOutputHead;        // Skip output (activated conv output)
 

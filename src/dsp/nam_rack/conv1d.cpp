@@ -97,6 +97,10 @@ void Conv1D::setMaxBufferSize(int maxBufferSize) {
     // Pre-allocate output matrix
     _output.resize(out_channels, maxBufferSize);
     _output.setZero();
+
+    // Pre-allocate reusable processing buffers
+    _inputBlock.resize(in_channels, maxBufferSize);
+    _inputBlock.setZero();
 }
 
 void Conv1D::process(const Matrix& input, int num_frames) {
@@ -120,22 +124,19 @@ void Conv1D::process(const Matrix& input, int num_frames) {
             const long lookback = -offset;
 
             // Read from ring buffer with lookback
-            Matrix input_block;
-            input_block.resize(_inputBuffer.getChannels(), num_frames);
-            _inputBuffer.read(input_block, num_frames, lookback);
+            _inputBuffer.read(_inputBlock, num_frames, lookback);
 
             // Matrix multiply: output += weight[k] * input_block
             // weight[k] is (out_channels x in_channels)
             // input_block is (in_channels x num_frames)
             // result is (out_channels x num_frames)
-            Matrix temp;
-            temp.resize(_output.rows(), num_frames);
-            Matrix::multiply(temp, _weight[k], input_block);
-
-            // Accumulate into output
             for (int c = 0; c < _output.rows(); c++) {
                 for (int f = 0; f < num_frames; f++) {
-                    _output(c, f) += temp(c, f);
+                    float sum = 0.0f;
+                    for (int ic = 0; ic < _inputBlock.rows(); ic++) {
+                        sum += _weight[k](c, ic) * _inputBlock(ic, f);
+                    }
+                    _output(c, f) += sum;
                 }
             }
         }
@@ -169,9 +170,7 @@ void Conv1D::processGrouped(const Matrix& input, int num_frames) {
             const long lookback = -offset;
 
             // Read from ring buffer
-            Matrix input_block;
-            input_block.resize(_inputBuffer.getChannels(), num_frames);
-            _inputBuffer.read(input_block, num_frames, lookback);
+            _inputBuffer.read(_inputBlock, num_frames, lookback);
 
             // Extract input slice for this group (rows g*in_per_group to (g+1)*in_per_group-1)
             // Extract weight slice for this group
@@ -183,7 +182,7 @@ void Conv1D::processGrouped(const Matrix& input, int num_frames) {
                     float sum = 0.0f;
                     for (long ic = 0; ic < in_per_group; ic++) {
                         sum += _weight[k](g * out_per_group + oc, g * in_per_group + ic) *
-                               input_block(g * in_per_group + ic, f);
+                               _inputBlock(g * in_per_group + ic, f);
                     }
                     _output(g * out_per_group + oc, f) += sum;
                 }

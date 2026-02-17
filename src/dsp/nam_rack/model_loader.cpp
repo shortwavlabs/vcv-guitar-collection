@@ -142,6 +142,230 @@ OptionalDouble getMetadataDouble(json_t* metadata, const char* key) {
     return result;
 }
 
+size_t calculateExpectedWaveNetWeights(const std::vector<wavenet::LayerArrayConfig>& configs) {
+    size_t total = 0;
+
+    for (size_t i = 0; i < configs.size(); ++i) {
+        const wavenet::LayerArrayConfig& cfg = configs[i];
+        const int layer_out = cfg.gated ? (2 * cfg.bottleneck) : cfg.bottleneck;
+
+        // Rechannel (Conv1x1, no bias)
+        total += static_cast<size_t>(cfg.channels) * static_cast<size_t>(cfg.inputSize);
+
+        // Per-layer parameters
+        for (size_t d = 0; d < cfg.dilations.size(); ++d) {
+            // Dilated Conv1D (with bias)
+            total += (static_cast<size_t>(cfg.kernelSize) * static_cast<size_t>(layer_out) * static_cast<size_t>(cfg.channels))
+                     / static_cast<size_t>(cfg.groupsInput);
+            total += static_cast<size_t>(layer_out);
+
+            // Input mixin Conv1x1 (no bias)
+            total += static_cast<size_t>(layer_out) * static_cast<size_t>(cfg.conditionSize);
+
+            // Output projection Conv1x1 (with bias), supports grouping
+            total += (static_cast<size_t>(cfg.bottleneck) * static_cast<size_t>(cfg.channels))
+                     / static_cast<size_t>(cfg.groups1x1);
+            total += static_cast<size_t>(cfg.channels);
+        }
+
+        // Head rechannel Conv1x1
+        total += static_cast<size_t>(cfg.bottleneck) * static_cast<size_t>(cfg.headSize);
+        if (cfg.headBias) {
+            total += static_cast<size_t>(cfg.headSize);
+        }
+    }
+
+    // Final head scale value
+    total += 1;
+    return total;
+}
+
+std::vector<wavenet::LayerArrayConfig> parseWaveNetLayerArrayConfigs(json_t* config) {
+    // Get layer arrays
+    json_t* layerArraysJ = json_object_get(config, "layer_arrays");
+    if (!layerArraysJ || !json_is_array(layerArraysJ)) {
+        // Backward compatibility with original NAM field name
+        layerArraysJ = json_object_get(config, "layers");
+    }
+    if (!layerArraysJ || !json_is_array(layerArraysJ)) {
+        throw std::runtime_error("WaveNet config missing layer arrays (expected 'layer_arrays' or 'layers')");
+    }
+
+    std::vector<wavenet::LayerArrayConfig> layerArrayConfigs;
+    const size_t numArrays = json_array_size(layerArraysJ);
+    layerArrayConfigs.reserve(numArrays);
+
+    for (size_t i = 0; i < numArrays; i++) {
+        json_t* arrJ = json_array_get(layerArraysJ, i);
+        wavenet::LayerArrayConfig lac;
+
+        // Input size
+        json_t* inputSizeJ = json_object_get(arrJ, "input_size");
+        lac.inputSize = inputSizeJ && json_is_integer(inputSizeJ) ?
+            static_cast<int>(json_integer_value(inputSizeJ)) : 1;
+
+        // Condition size
+        json_t* condSizeJ = json_object_get(arrJ, "condition_size");
+        lac.conditionSize = condSizeJ && json_is_integer(condSizeJ) ?
+            static_cast<int>(json_integer_value(condSizeJ)) : 1;
+
+        // Head size
+        json_t* headSizeJ = json_object_get(arrJ, "head_size");
+        lac.headSize = headSizeJ && json_is_integer(headSizeJ) ?
+            static_cast<int>(json_integer_value(headSizeJ)) : 1;
+
+        // Channels
+        json_t* channelsJ = json_object_get(arrJ, "channels");
+        if (!channelsJ || !json_is_integer(channelsJ)) {
+            throw std::runtime_error("WaveNet layer array missing channels");
+        }
+        lac.channels = static_cast<int>(json_integer_value(channelsJ));
+
+        // Bottleneck
+        json_t* bottleneckJ = json_object_get(arrJ, "bottleneck");
+        lac.bottleneck = bottleneckJ && json_is_integer(bottleneckJ) ?
+            static_cast<int>(json_integer_value(bottleneckJ)) : lac.channels;
+
+        // Kernel size
+        json_t* kernelJ = json_object_get(arrJ, "kernel_size");
+        lac.kernelSize = kernelJ && json_is_integer(kernelJ) ?
+            static_cast<int>(json_integer_value(kernelJ)) : 3;
+
+        // Dilations array
+        json_t* dilationsJ = json_object_get(arrJ, "dilations");
+        if (dilationsJ && json_is_array(dilationsJ)) {
+            const size_t numDilations = json_array_size(dilationsJ);
+            lac.dilations.reserve(numDilations);
+            for (size_t d = 0; d < numDilations; d++) {
+                json_t* dJ = json_array_get(dilationsJ, d);
+                if (json_is_integer(dJ)) {
+                    lac.dilations.push_back(static_cast<int>(json_integer_value(dJ)));
+                }
+            }
+        }
+
+        // Activation
+        json_t* actJ = json_object_get(arrJ, "activation");
+        lac.activation = actJ && json_is_string(actJ) ?
+            json_string_value(actJ) : "Tanh";
+
+        // Gated
+        json_t* gatedJ = json_object_get(arrJ, "gated");
+        lac.gated = gatedJ && json_is_boolean(gatedJ) ?
+            json_boolean_value(gatedJ) : true;
+
+        // Head bias
+        json_t* headBiasJ = json_object_get(arrJ, "head_bias");
+        lac.headBias = headBiasJ && json_is_boolean(headBiasJ) ?
+            json_boolean_value(headBiasJ) : true;
+
+        // Groups
+        json_t* groupsInputJ = json_object_get(arrJ, "groups_input");
+        if (!groupsInputJ) {
+            groupsInputJ = json_object_get(arrJ, "groups");
+        }
+        lac.groupsInput = groupsInputJ && json_is_integer(groupsInputJ) ?
+            static_cast<int>(json_integer_value(groupsInputJ)) : 1;
+
+        json_t* groups1x1J = json_object_get(arrJ, "groups_1x1");
+        lac.groups1x1 = groups1x1J && json_is_integer(groups1x1J) ?
+            static_cast<int>(json_integer_value(groups1x1J)) : 1;
+
+        layerArrayConfigs.push_back(lac);
+    }
+
+    return layerArrayConfigs;
+}
+
+std::string summarizeWaveNetDims(const std::vector<wavenet::LayerArrayConfig>& configs) {
+    std::stringstream ss;
+    ss << "arrays=" << configs.size();
+    for (size_t i = 0; i < configs.size(); ++i) {
+        const wavenet::LayerArrayConfig& cfg = configs[i];
+        ss << " A" << i
+           << "(in=" << cfg.inputSize
+           << ",cond=" << cfg.conditionSize
+           << ",head=" << cfg.headSize
+           << ",ch=" << cfg.channels
+           << ",bn=" << cfg.bottleneck
+           << ",k=" << cfg.kernelSize
+           << ",dils=" << cfg.dilations.size()
+           << ",gated=" << (cfg.gated ? 1 : 0)
+           << ",gIn=" << cfg.groupsInput
+           << ",g1x1=" << cfg.groups1x1
+           << ")";
+    }
+    return ss.str();
+}
+
+std::string summarizeModelDims(const std::string& architecture,
+                               json_t* config,
+                               const std::vector<float>& weights,
+                               size_t& expectedWeightsOut) {
+    expectedWeightsOut = weights.size();
+
+    if (!config || !json_is_object(config)) {
+        return "config=missing";
+    }
+
+    if (architecture == "WaveNet") {
+        try {
+            const std::vector<wavenet::LayerArrayConfig> cfgs = parseWaveNetLayerArrayConfigs(config);
+            expectedWeightsOut = calculateExpectedWaveNetWeights(cfgs);
+            return summarizeWaveNetDims(cfgs);
+        } catch (const std::exception& e) {
+            expectedWeightsOut = weights.size();
+            return std::string("wavenet_parse_error=") + e.what();
+        }
+    }
+
+    if (architecture == "ConvNet") {
+        const int channels = json_is_integer(json_object_get(config, "channels"))
+            ? static_cast<int>(json_integer_value(json_object_get(config, "channels"))) : -1;
+        const size_t numDilations = json_is_array(json_object_get(config, "dilations"))
+            ? json_array_size(json_object_get(config, "dilations")) : 0;
+        const int groups = json_is_integer(json_object_get(config, "groups"))
+            ? static_cast<int>(json_integer_value(json_object_get(config, "groups"))) : 1;
+        const int batchnorm = json_is_boolean(json_object_get(config, "batchnorm"))
+            ? (json_boolean_value(json_object_get(config, "batchnorm")) ? 1 : 0) : 0;
+
+        std::stringstream ss;
+        ss << "channels=" << channels
+           << " dils=" << numDilations
+           << " groups=" << groups
+           << " batchnorm=" << batchnorm;
+        return ss.str();
+    }
+
+    if (architecture == "LSTM") {
+        const int numLayers = json_is_integer(json_object_get(config, "num_layers"))
+            ? static_cast<int>(json_integer_value(json_object_get(config, "num_layers"))) : -1;
+        const int inputSize = json_is_integer(json_object_get(config, "input_size"))
+            ? static_cast<int>(json_integer_value(json_object_get(config, "input_size"))) : -1;
+        const int hiddenSize = json_is_integer(json_object_get(config, "hidden_size"))
+            ? static_cast<int>(json_integer_value(json_object_get(config, "hidden_size"))) : -1;
+
+        std::stringstream ss;
+        ss << "layers=" << numLayers
+           << " input=" << inputSize
+           << " hidden=" << hiddenSize;
+        return ss.str();
+    }
+
+    if (architecture == "Linear") {
+        const int receptiveField = json_is_integer(json_object_get(config, "receptive_field"))
+            ? static_cast<int>(json_integer_value(json_object_get(config, "receptive_field"))) : -1;
+        const int bias = json_is_boolean(json_object_get(config, "bias"))
+            ? (json_boolean_value(json_object_get(config, "bias")) ? 1 : 0) : 1;
+
+        std::stringstream ss;
+        ss << "rf=" << receptiveField << " bias=" << bias;
+        return ss.str();
+    }
+
+    return "dims=unavailable";
+}
+
 } // anonymous namespace
 
 // ============================================================================
@@ -282,92 +506,22 @@ std::unique_ptr<DSP> createWaveNet(json_t* config, std::vector<float>& weights, 
     json_t* withHeadJ = json_object_get(config, "with_head");
     if (withHeadJ && json_is_boolean(withHeadJ)) {
         with_head = json_boolean_value(withHeadJ);
+    } else {
+        json_t* headJ = json_object_get(config, "head");
+        if (headJ && !json_is_null(headJ)) {
+            with_head = true;
+        }
     }
 
-    // Get layer arrays
-    json_t* layerArraysJ = json_object_get(config, "layer_arrays");
-    if (!layerArraysJ || !json_is_array(layerArraysJ)) {
-        throw std::runtime_error("WaveNet config missing layer_arrays");
-    }
+    std::vector<wavenet::LayerArrayConfig> layerArrayConfigs = parseWaveNetLayerArrayConfigs(config);
 
-    std::vector<wavenet::LayerArrayConfig> layerArrayConfigs;
-    size_t numArrays = json_array_size(layerArraysJ);
-
-    for (size_t i = 0; i < numArrays; i++) {
-        json_t* arrJ = json_array_get(layerArraysJ, i);
-        wavenet::LayerArrayConfig lac;
-
-        // Input size
-        json_t* inputSizeJ = json_object_get(arrJ, "input_size");
-        lac.inputSize = inputSizeJ && json_is_integer(inputSizeJ) ?
-            static_cast<int>(json_integer_value(inputSizeJ)) : 1;
-
-        // Condition size
-        json_t* condSizeJ = json_object_get(arrJ, "condition_size");
-        lac.conditionSize = condSizeJ && json_is_integer(condSizeJ) ?
-            static_cast<int>(json_integer_value(condSizeJ)) : 1;
-
-        // Head size
-        json_t* headSizeJ = json_object_get(arrJ, "head_size");
-        lac.headSize = headSizeJ && json_is_integer(headSizeJ) ?
-            static_cast<int>(json_integer_value(headSizeJ)) : 1;
-
-        // Channels
-        json_t* channelsJ = json_object_get(arrJ, "channels");
-        if (!channelsJ || !json_is_integer(channelsJ)) {
-            throw std::runtime_error("WaveNet layer array missing channels");
-        }
-        lac.channels = static_cast<int>(json_integer_value(channelsJ));
-
-        // Bottleneck
-        json_t* bottleneckJ = json_object_get(arrJ, "bottleneck");
-        if (!bottleneckJ || !json_is_integer(bottleneckJ)) {
-            throw std::runtime_error("WaveNet layer array missing bottleneck");
-        }
-        lac.bottleneck = static_cast<int>(json_integer_value(bottleneckJ));
-
-        // Kernel size
-        json_t* kernelJ = json_object_get(arrJ, "kernel_size");
-        lac.kernelSize = kernelJ && json_is_integer(kernelJ) ?
-            static_cast<int>(json_integer_value(kernelJ)) : 3;
-
-        // Dilations array
-        json_t* dilationsJ = json_object_get(arrJ, "dilations");
-        if (dilationsJ && json_is_array(dilationsJ)) {
-            size_t numDilations = json_array_size(dilationsJ);
-            for (size_t d = 0; d < numDilations; d++) {
-                json_t* dJ = json_array_get(dilationsJ, d);
-                if (json_is_integer(dJ)) {
-                    lac.dilations.push_back(static_cast<int>(json_integer_value(dJ)));
-                }
-            }
-        }
-
-        // Activation
-        json_t* actJ = json_object_get(arrJ, "activation");
-        lac.activation = actJ && json_is_string(actJ) ?
-            json_string_value(actJ) : "Tanh";
-
-        // Gated
-        json_t* gatedJ = json_object_get(arrJ, "gated");
-        lac.gated = gatedJ && json_is_boolean(gatedJ) ?
-            json_boolean_value(gatedJ) : true;
-
-        // Head bias
-        json_t* headBiasJ = json_object_get(arrJ, "head_bias");
-        lac.headBias = headBiasJ && json_is_boolean(headBiasJ) ?
-            json_boolean_value(headBiasJ) : true;
-
-        // Groups
-        json_t* groupsInputJ = json_object_get(arrJ, "groups_input");
-        lac.groupsInput = groupsInputJ && json_is_integer(groupsInputJ) ?
-            static_cast<int>(json_integer_value(groupsInputJ)) : 1;
-
-        json_t* groups1x1J = json_object_get(arrJ, "groups_1x1");
-        lac.groups1x1 = groups1x1J && json_is_integer(groups1x1J) ?
-            static_cast<int>(json_integer_value(groups1x1J)) : 1;
-
-        layerArrayConfigs.push_back(lac);
+    // Strict weight-count validation to avoid silent misalignment/UB during parsing.
+    const size_t expectedWeights = calculateExpectedWaveNetWeights(layerArrayConfigs);
+    if (weights.size() != expectedWeights) {
+        std::stringstream ss;
+        ss << "WaveNet weight mismatch: expected " << expectedWeights
+           << " weights from config, got " << weights.size() << ".";
+        throw std::runtime_error(ss.str());
     }
 
     return wavenet::create(layerArrayConfigs, head_scale, with_head, weights, expectedSampleRate);
@@ -420,9 +574,29 @@ std::unique_ptr<DSP> loadModel(const std::string& filename, ModelConfig& config)
 
         // Get weights
         config.weights = getWeightsFromJson(root);
+        config.actualWeightCount = config.weights.size();
 
         // Get sample rate
         config.expectedSampleRate = getSampleRateFromJson(root);
+
+        // Build model-load diagnostics for runtime logs
+        size_t expectedWeights = config.actualWeightCount;
+        config.layerDimsSummary = summarizeModelDims(
+            config.architecture,
+            configObj,
+            config.weights,
+            expectedWeights
+        );
+        config.expectedWeightCount = expectedWeights;
+
+        {
+            std::stringstream ss;
+            ss << "arch=" << config.architecture
+               << " expected_weights=" << config.expectedWeightCount
+               << " actual_weights=" << config.actualWeightCount
+               << " dims=" << config.layerDimsSummary;
+            config.loadDiagnostics = ss.str();
+        }
 
         // Create DSP
         json_decref(root);

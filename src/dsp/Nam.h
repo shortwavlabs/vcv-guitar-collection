@@ -5,9 +5,6 @@
 #define _USE_MATH_DEFINES
 #endif
 
-// Use float for NAM_SAMPLE (more efficient for audio processing)
-#define NAM_SAMPLE_FLOAT
-
 // Use the new nam_rack implementation (no Eigen dependency)
 #include "nam_rack/dsp.h"
 #include "nam_rack/model_loader.h"
@@ -19,7 +16,10 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <exception>
 
 /**
  * BiquadFilter - Second-order IIR filter for tone shaping
@@ -261,7 +261,6 @@ public:
         // Pre-allocate buffers
         resampleInBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.f);
         resampleOutBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.f);
-        modelInputBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.f);
         modelOutputBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.f);
         gatedInputBuffer.resize(MAX_BLOCK_SIZE, 0.f);
 
@@ -274,9 +273,13 @@ public:
 
     // Model management
     bool loadModel(const std::string& path) {
+        nam::ModelConfig loadedConfig;
         try {
-            auto newModel = nam::loadModel(path);
+            lastLoadDiagnostics.clear();
+            auto newModel = nam::loadModel(path, loadedConfig);
             if (!newModel) {
+                lastLoadError = "nam::loadModel returned null DSP";
+                lastLoadDiagnostics = loadedConfig.loadDiagnostics;
                 return false;
             }
 
@@ -292,12 +295,20 @@ public:
 
             model = std::move(newModel);
             modelPath = path;
+            lastLoadError.clear();
+            lastLoadDiagnostics = loadedConfig.loadDiagnostics;
 
             // Update resampler rates
             updateResamplerRates();
 
             return true;
+        } catch (const std::exception& e) {
+            lastLoadError = e.what();
+            lastLoadDiagnostics = loadedConfig.loadDiagnostics;
+            return false;
         } catch (...) {
+            lastLoadError = "Unknown exception while loading NAM model";
+            lastLoadDiagnostics = loadedConfig.loadDiagnostics;
             return false;
         }
     }
@@ -305,6 +316,8 @@ public:
     void unloadModel() {
         model.reset();
         modelPath.clear();
+        lastLoadError.clear();
+        lastLoadDiagnostics.clear();
     }
 
     bool isModelLoaded() const { return model != nullptr; }
@@ -312,6 +325,8 @@ public:
     double getModelSampleRate() const { return modelSampleRate; }
 
     std::string getModelPath() const { return modelPath; }
+    std::string getLastLoadError() const { return lastLoadError; }
+    std::string getLoadDiagnostics() const { return lastLoadDiagnostics; }
 
     std::string getModelName() const {
         if (modelPath.empty()) return "";
@@ -354,20 +369,34 @@ public:
         for (int i = 0; i < numFrames; i++) {
             gatedInputBuffer[i] = noiseGate.process(input[i]);
         }
+        sanitizeBuffer(gatedInputBuffer.data(), numFrames);
 
         // Check if resampling is needed
         double ratio = modelSampleRate / engineSampleRate;
 
         if (std::abs(ratio - 1.0) < 0.001) {
             // No resampling needed - direct processing
+            if (numFrames > static_cast<int>(modelOutputBuffer.size())) {
+                modelOutputBuffer.resize(numFrames, 0.f);
+            }
             model->process(gatedInputBuffer.data(), modelOutputBuffer.data(), numFrames);
+            sanitizeBuffer(modelOutputBuffer.data(), numFrames);
             for (int i = 0; i < numFrames; i++) {
-                output[i] = toneStack.process(modelOutputBuffer[i]);
+                output[i] = sanitizeSample(toneStack.process(modelOutputBuffer[i]));
             }
         } else {
             // Resampling required using Rack's SampleRateConverter
             int maxResampledFrames = static_cast<int>(numFrames * ratio) + 16;
-            maxResampledFrames = std::min(maxResampledFrames, static_cast<int>(resampleInBuffer.size()));
+            if (maxResampledFrames < 1) {
+                maxResampledFrames = 1;
+            }
+
+            if (maxResampledFrames > static_cast<int>(resampleInBuffer.size())) {
+                resampleInBuffer.resize(maxResampledFrames, 0.f);
+                resampleOutBuffer.resize(maxResampledFrames, 0.f);
+            }
+
+            std::fill(output, output + numFrames, 0.f);
 
             // Upsample input to model rate
             int inFrames = numFrames;
@@ -375,18 +404,30 @@ public:
             srcIn.process(gatedInputBuffer.data(), 1, &inFrames, resampleInBuffer.data(), 1, &outFrames);
 
             int processedFrames = outFrames;
+            if (processedFrames > 0) {
+                sanitizeBuffer(resampleInBuffer.data(), processedFrames);
+            }
 
             // Process through NAM (all float now)
-            model->process(resampleInBuffer.data(), resampleOutBuffer.data(), processedFrames);
+            if (processedFrames > 0) {
+                model->process(resampleInBuffer.data(), resampleOutBuffer.data(), processedFrames);
+                sanitizeBuffer(resampleOutBuffer.data(), processedFrames);
+            }
 
             // Downsample output to engine rate
             inFrames = processedFrames;
             outFrames = numFrames;
-            srcOut.process(resampleOutBuffer.data(), 1, &inFrames, output, 1, &outFrames);
+            if (processedFrames > 0) {
+                srcOut.process(resampleOutBuffer.data(), 1, &inFrames, output, 1, &outFrames);
+            }
+
+            if (outFrames > 0) {
+                sanitizeBuffer(output, outFrames);
+            }
 
             // Apply tone stack to output
             for (int i = 0; i < numFrames; i++) {
-                output[i] = toneStack.process(output[i]);
+                output[i] = sanitizeSample(toneStack.process(output[i]));
             }
         }
     }
@@ -420,6 +461,8 @@ public:
 private:
     std::unique_ptr<nam::DSP> model;
     std::string modelPath;
+    std::string lastLoadError;
+    std::string lastLoadDiagnostics;
 
     // Resampling state using VCV Rack's SampleRateConverter (Speex-based)
     rack::dsp::SampleRateConverter<1> srcIn;
@@ -436,9 +479,33 @@ private:
     // Pre-allocated buffers for resampling (all float now, no Eigen)
     std::vector<float> resampleInBuffer;
     std::vector<float> resampleOutBuffer;
-    std::vector<float> modelInputBuffer;
     std::vector<float> modelOutputBuffer;
     std::vector<float> gatedInputBuffer;
+
+    static float softClipSample(float x) {
+        constexpr float kHardLimit = 8.0f;
+        if (x > kHardLimit) return kHardLimit;
+        if (x < -kHardLimit) return -kHardLimit;
+        return x;
+    }
+
+    float sanitizeSample(float x) {
+        if (!std::isfinite(x)) {
+            return 0.0f;
+        }
+        return softClipSample(x);
+    }
+
+    void sanitizeBuffer(float* data, int size) {
+        for (int i = 0; i < size; i++) {
+            const float v = data[i];
+            if (!std::isfinite(v)) {
+                data[i] = 0.0f;
+                continue;
+            }
+            data[i] = softClipSample(v);
+        }
+    }
 
     void updateResamplerRates() {
         // srcIn: engine rate -> model rate (upsample if model rate > engine rate)
