@@ -19,17 +19,23 @@
 
 #include "matrix.h"
 
-// Enable Rack SIMD path only when explicitly requested.
-// Although implemented, the SIMD activation path can be slower on some toolchains.
-#if defined(NAM_FORCE_SIMD_ACTIVATIONS) && defined(__has_include)
-    #if __has_include(<simd/functions.hpp>)
-        #include <simd/functions.hpp>
-        #define NAM_USE_SIMD 1
+// SIMD activation policy:
+// - Default: enabled when Rack SIMD headers are available.
+// - Override: define NAM_DISABLE_SIMD_ACTIVATIONS to force scalar.
+// - Override: define NAM_FORCE_SIMD_ACTIVATIONS to force SIMD when available.
+#if !defined(NAM_USE_SIMD)
+    #if defined(NAM_DISABLE_SIMD_ACTIVATIONS)
+        #define NAM_USE_SIMD 0
+    #elif defined(__has_include)
+        #if __has_include(<simd/functions.hpp>)
+            #include <simd/functions.hpp>
+            #define NAM_USE_SIMD 1
+        #else
+            #define NAM_USE_SIMD 0
+        #endif
     #else
         #define NAM_USE_SIMD 0
     #endif
-#else
-    #define NAM_USE_SIMD 0
 #endif
 
 namespace nam {
