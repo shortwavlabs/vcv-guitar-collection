@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <functional>
 #include <cassert>
+#include <atomic>
 
 #include "matrix.h"
 
@@ -40,6 +41,8 @@
 
 namespace nam {
 namespace activations {
+
+inline bool isUsingFastTanh();
 
 // ============================================================================
 // Fast scalar activation functions
@@ -272,6 +275,25 @@ public:
         }
 #endif
     }
+};
+
+/**
+ * Runtime-switchable tanh activation.
+ * Uses global fast-tanh policy at apply-time so toggles take effect immediately.
+ */
+class ActivationRuntimeTanh : public Activation {
+public:
+    void apply(float* data, long size) override {
+        if (isUsingFastTanh()) {
+            m_fast.apply(data, size);
+        } else {
+            m_exact.apply(data, size);
+        }
+    }
+
+private:
+    ActivationTanh m_exact;
+    ActivationFastTanh m_fast;
 };
 
 /**
@@ -532,17 +554,17 @@ private:
 // ============================================================================
 
 // Global flag to use fast tanh instead of std::tanh
-// Keep default aligned with original NAM behavior.
-static bool g_useFastTanh = false;
+// Default-on for performance; can be toggled at runtime.
+static std::atomic<bool> g_useFastTanh{true};
 
-inline void enableFastTanh() { g_useFastTanh = true; }
-inline void disableFastTanh() { g_useFastTanh = false; }
-inline bool isUsingFastTanh() { return g_useFastTanh; }
+inline void enableFastTanh() { g_useFastTanh.store(true, std::memory_order_relaxed); }
+inline void disableFastTanh() { g_useFastTanh.store(false, std::memory_order_relaxed); }
+inline bool isUsingFastTanh() { return g_useFastTanh.load(std::memory_order_relaxed); }
 
 inline Activation* Activation::get(const std::string& name) {
     // Create activations on demand
     static ActivationIdentity s_identity;
-    static ActivationTanh s_tanh;
+    static ActivationRuntimeTanh s_runtimeTanh;
     static ActivationFastTanh s_fastTanh;
     static ActivationHardTanh s_hardTanh;
     static ActivationLeakyHardTanh s_leakyHardTanh;
@@ -555,10 +577,7 @@ inline Activation* Activation::get(const std::string& name) {
     static ActivationHardSwish s_hardSwish;
 
     if (name == "Identity" || name == "identity") return &s_identity;
-    if (name == "Tanh" || name == "tanh") {
-        return g_useFastTanh ? static_cast<Activation*>(&s_fastTanh)
-                             : static_cast<Activation*>(&s_tanh);
-    }
+    if (name == "Tanh" || name == "tanh") return &s_runtimeTanh;
     if (name == "FastTanh" || name == "fast_tanh" || name == "Fasttanh") return &s_fastTanh;
     if (name == "HardTanh" || name == "hard_tanh" || name == "Hardtanh") return &s_hardTanh;
     if (name == "ReLU" || name == "relu") return &s_relu;

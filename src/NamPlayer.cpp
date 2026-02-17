@@ -52,8 +52,11 @@ NamPlayer::NamPlayer() {
     outputBuffer.resize(BLOCK_SIZE, 0.f);
     displayBuffer.resize(DISPLAY_BUFFER_SIZE, 0.f);
 
-    // Use exact tanh for numerical stability in deep residual NAM models
-    nam::activations::disableFastTanh();
+    if (useFastTanh) {
+        nam::activations::enableFastTanh();
+    } else {
+        nam::activations::disableFastTanh();
+    }
 }
 
 NamPlayer::~NamPlayer() {
@@ -249,11 +252,18 @@ void NamPlayer::loadModel(const std::string& path) {
     
     isLoading = true;
     loadSuccess = false;
+    const bool fastTanhSetting = useFastTanh;
     
-    loadThread = std::thread([this, path]() {
+    loadThread = std::thread([this, path, fastTanhSetting]() {
         try {
             std::unique_ptr<NamDSP> newDsp(new NamDSP());
             newDsp->setEcoModeLevel(ecoModeLevel);
+
+            if (fastTanhSetting) {
+                nam::activations::enableFastTanh();
+            } else {
+                nam::activations::disableFastTanh();
+            }
 
             if (newDsp->loadModel(path)) {
                 INFO("[NAM][load] %s", newDsp->getLoadDiagnostics().c_str());
@@ -338,6 +348,7 @@ json_t* NamPlayer::dataToJson() {
     json_object_set_new(rootJ, "modelPath", json_string(path.c_str()));
     json_object_set_new(rootJ, "waveformColor", json_integer(static_cast<int>(waveformColor)));
     json_object_set_new(rootJ, "ecoModeLevel", json_integer(ecoModeLevel));
+    json_object_set_new(rootJ, "useFastTanh", json_boolean(useFastTanh));
     return rootJ;
 }
 
@@ -375,11 +386,22 @@ void NamPlayer::dataFromJson(json_t* rootJ) {
         ecoModeLevel = NamDSP::ECO_ON;
     }
 
+    json_t* useFastTanhJ = json_object_get(rootJ, "useFastTanh");
+    if (useFastTanhJ) {
+        useFastTanh = json_is_true(useFastTanhJ);
+    }
+
     if (namDsp) {
         namDsp->setEcoModeLevel(ecoModeLevel);
     }
     if (pendingDsp) {
         pendingDsp->setEcoModeLevel(ecoModeLevel);
+    }
+
+    if (useFastTanh) {
+        nam::activations::enableFastTanh();
+    } else {
+        nam::activations::disableFastTanh();
     }
 }
 
@@ -520,6 +542,18 @@ void NamPlayerWidget::appendContextMenu(Menu* menu) {
             ));
         }
     }));
+
+    menu->addChild(createMenuItem("Use Fast Tanh",
+        module->useFastTanh ? "✓" : "",
+        [=]() {
+            module->useFastTanh = !module->useFastTanh;
+            if (module->useFastTanh) {
+                nam::activations::enableFastTanh();
+            } else {
+                nam::activations::disableFastTanh();
+            }
+        }
+    ));
 
     std::string modelName = module->getModelName();
     if (!modelName.empty()) {

@@ -99,6 +99,7 @@ struct NamPlayer : Module {
 
     // Performance mode
     int ecoModeLevel = NamDSP::ECO_OFF;
+    bool useFastTanh = true;
     
     NamPlayer();
     ~NamPlayer();
