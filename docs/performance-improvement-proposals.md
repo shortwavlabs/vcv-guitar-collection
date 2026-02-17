@@ -681,4 +681,10 @@ This roadmap is sequenced to deliver early CPU wins with minimal risk, while def
 
 - One intermediate run (`docs/perf/perf-baseline-20260217-200036.csv`) showed a transient 48kHz max-block spike (`2197us`) likely caused by scheduler/system jitter.
 - A confirmation run (`docs/perf/perf-baseline-20260217-200058.csv`) did not reproduce the spike (`max 573us` at 48kHz, `outlier_blocks = 0`).
+- Additional 48kHz stability sweep (12 repeated runs, same `128/250/1200` config) showed stable central tendency and occasional non-critical max excursions:
+    - Mean of run means: `424.288us`
+    - Mean of run P95: `445.250us`
+    - Max range across runs: `516us` to `997us`
+    - Spikes `>=800us`: `2/12` runs
+    - Spikes `>=1000us`: `0/12` runs
 - Results indicate meaningful aggregate gains from early roadmap items (matrix, gate, conv paths, activation policy, and LSTM SIMD preparation), with remaining upside expected as non-WaveNet architectures are benchmarked.
