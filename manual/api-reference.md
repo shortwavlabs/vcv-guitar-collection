@@ -137,7 +137,12 @@ enum LightId {
 - **Off**: Full processing quality (default)
 - **On**: Reduced CPU usage
 
-The module persists this state in patch data, with backward compatibility for older patches that stored a legacy boolean eco flag.
+`NamPlayer` also exposes a **Use Fast Tanh** context-menu toggle:
+
+- **Enabled (default)**: Uses fast tanh approximation for activation paths.
+- **Disabled**: Uses exact tanh behavior.
+
+The module persists these states in patch data, with backward compatibility for older patches that stored a legacy boolean eco flag.
 
 #### Public Methods
 

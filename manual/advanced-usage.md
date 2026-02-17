@@ -43,6 +43,17 @@ NAM Player includes a context-menu **Eco Mode** toggle with two states:
 
 Use Eco Mode On when your patch is close to CPU limits, especially with multiple NAM instances or higher sample rates.
 
+#### Use Fast Tanh (On/Off)
+
+NAM Player also provides a context-menu **Use Fast Tanh** toggle:
+
+- **On (default):** Fast tanh approximation in activation paths for lower CPU.
+- **Off:** Exact `std::tanh` path for strict numerical behavior.
+
+**Enable it:** Right-click **NAM Player** → **Use Fast Tanh**
+
+For most models, leave this **On**. If you suspect a specific model is unusually sensitive, switch it **Off** for that patch and compare by ear.
+
 **Cabinet Simulator:**
 - FFT convolution: 1-2% per voice
 - Filter processing: <0.5% per voice

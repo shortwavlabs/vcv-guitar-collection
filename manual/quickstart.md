@@ -14,6 +14,7 @@ Get up and running with Guitar Tools in minutes.
   - [Dialing in Your Tone](#dialing-in-your-tone)
   - [Using the Noise Gate](#using-the-noise-gate)
    - [Eco Mode (CPU Savings)](#eco-mode-cpu-savings)
+   - [Use Fast Tanh (Performance)](#use-fast-tanh-performance)
   - [Tone Shaping with EQ](#tone-shaping-with-eq)
 - [Cabinet Simulator Module](#cabinet-simulator-module)
   - [Loading Impulse Responses](#loading-impulse-responses)
@@ -238,6 +239,25 @@ When enabled, the module shows an **ECO ON** badge so you can quickly see which 
 - Projects running at higher sample rates
 
 **Tip:** Start with Eco Mode Off while dialing in tones, then switch to On if you need extra headroom.
+
+### Use Fast Tanh (Performance)
+
+NAM Player includes a context-menu **Use Fast Tanh** toggle for model activations.
+
+- **Enabled (default):** Uses the fast tanh approximation for lower CPU usage.
+- **Disabled:** Uses exact `std::tanh` for maximum numerical conservatism.
+
+#### How to Toggle
+
+1. **Right-click** NAM Player
+2. Click **Use Fast Tanh** (checkmark = enabled)
+
+#### When to Use It
+
+- Keep it **enabled** for most patches and live use.
+- Try **disabled** only if a specific model behaves unexpectedly and you want exact tanh behavior.
+
+This setting is saved with your patch.
 
 ### Tone Shaping with EQ
 

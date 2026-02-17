@@ -255,6 +255,17 @@ Use **On** when running dense patches, higher sample rates, or live sets where C
 
 **How to enable:** Right-click **NAM Player** → **Eco Mode** → **On**
 
+### What is "Use Fast Tanh" and should I enable it?
+
+`Use Fast Tanh` controls whether NAM Player uses a fast tanh approximation in activation paths.
+
+- **Enabled (default):** Lower CPU usage.
+- **Disabled:** Exact tanh behavior for conservative numerical matching.
+
+For most users, keep it **enabled**. If one specific model sounds unstable or different than expected, disable it for that patch and compare.
+
+**How to toggle:** Right-click **NAM Player** → **Use Fast Tanh**
+
 ### How much RAM does Guitar Tools use?
 
 **Base plugin:** ~10 MB  
