@@ -289,10 +289,6 @@ public:
                 modelSampleRate = 48000.0;  // Default if not specified
             }
 
-            // Initialize the model
-            newModel->reset(modelSampleRate, MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO);
-            newModel->prewarm();
-
             model = std::move(newModel);
             modelPath = path;
             lastLoadError.clear();

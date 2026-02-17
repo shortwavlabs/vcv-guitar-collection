@@ -1,12 +1,30 @@
 # NAM Rewrite Noise Analysis
 
 > **Date**: 2026-02-17  
-> **Status**: Active investigation  
+> **Status**: Root cause fixed, stabilization complete  
 > **Symptom**: Extreme noise output from the NAM Player plugin even with silence/no audio input (full-scale noise visible on waveform display)
 
 ## Executive Summary
 
-A comprehensive line-by-line comparison of the refactored `src/dsp/nam_rack/` code against the original `dep/NeuralAmpModelerCore/NAM/` has identified **12 bugs** across 4 severity levels. The noise is most likely caused by a combination of **real-time heap allocation in the Conv1D processing loop** (causing audio glitches), **potential memory corruption from missing buffer overflow protection**, and **activation function mismatches** that could cause model instability.
+A comprehensive line-by-line comparison of the refactored `src/dsp/nam_rack/` code against the original `dep/NeuralAmpModelerCore/NAM/` identified **12 bugs** across 4 severity levels. During follow-up implementation and validation, the primary runtime noise issue was traced to a **sample-type ABI mismatch (`NAM_SAMPLE` float/double inconsistency across translation units)** and fixed. The plugin now loads and processes the affected WaveNet models correctly.
+
+## 2026-02-17 Post-Fix Status (HIGH + MODERATE)
+
+### HIGH Severity
+
+- **Bug 5 (WaveNet JSON field mismatch)**: **Addressed**. Loader now supports both `layers`/`layer_arrays`, `groups`/`groups_input`, and fallback head detection.
+- **Bug 6 (non-gated activation over full matrix)**: **Addressed**. Activation is applied only over active frames.
+- **Bug 7 (`with_head` parsing difference)**: **Addressed**. Compatibility parsing supports both conventions.
+
+### MODERATE Severity
+
+- **Bug 8 (triple prewarm)**: **Addressed**. Redundant prewarm calls in `NamDSP::loadModel()` were removed.
+- **Bug 9 (NaN/Inf protection)**: **Addressed (wrapper-level)**. `NamDSP` sanitizes non-finite values and clips extreme outputs in runtime processing.
+- **Bug 12 (fast_tanh default mismatch)**: **Addressed**. Default now matches upstream behavior (`fast_tanh` disabled by default).
+- **Bug 10 (naive matrix multiply)**: **Open optimization**. Not currently the source of incorrect output, but still a performance improvement opportunity.
+- **Bug 11 (RingBuffer copy instead of zero-copy view)**: **Open optimization**. Functionally correct; can be optimized for CPU/memory bandwidth.
+
+---
 
 ---
 
@@ -287,23 +305,14 @@ The refactored code defaults `g_useFastTanh = true`. The original defaults `usin
 
 ---
 
-## Root Cause Analysis
+## Root Cause Analysis (Updated)
 
-The noise is most likely caused by a **combination of factors**:
+The observed full-scale noise in runtime logs was ultimately consistent with an ABI/type mismatch in model processing buffers: **`NAM_SAMPLE` was not guaranteed to be the same type across all translation units**. Under certain build paths this could lead to float buffers being interpreted with double-based interfaces, producing deterministic huge finite values (e.g. `~3.68935e+19`) without immediate NaNs.
 
-1. **Primary cause**: Bug 1 (heap allocation in audio thread) + Bug 10 (slow matrix multiply) + Bug 11 (data copies) together make the refactored Conv1D **~50-100x slower** than the original. This causes consistent **audio buffer underruns** in VCV Rack, which manifests as the continuous noise visible in the screenshot.
+After enforcing a single sample type (`float`) in the NAM core interface and validating model load compatibility, the noise issue was resolved.
 
-2. **Contributing cause**: Bug 2 (buffer overflow) may cause **memory corruption** that turns processed audio into random data.
+## Remaining Recommended Work
 
-3. **Contributing cause**: Bug 3 (hardcoded activation) and Bug 4 (activation name mismatches) could cause the model to produce incorrect output even when processing completes on time.
-
-## Recommended Fix Priority
-
-1. **Immediate**: Fix Bug 1 — pre-allocate all temporary matrices in `setMaxBufferSize()`
-2. **Immediate**: Fix Bug 2 — add overflow checks and dynamic resize to `updateBuffers()`
-3. **Immediate**: Fix Bug 3 — use `mActivation->apply()` in the gated path instead of hardcoded std::tanh
-4. **High**: Fix Bug 4 — add missing activation name mappings ("Hardtanh", "SiLU", "Hardswish", "PReLU", etc.)
-5. **High**: Fix Bug 5 — verify JSON field names against actual NAM model files
-6. **High**: Fix Bug 10 — consider using a BLAS library or at minimum SIMD intrinsics for matrix multiply
-7. **Medium**: Fix Bug 11 — return a pointer/view from RingBuffer::read() instead of copying
-8. **Low**: Fix remaining bugs (6, 7, 8, 9, 12)
+1. **Performance optimization (optional)**: Optimize `Matrix::multiply` for SIMD/BLAS-equivalent throughput.
+2. **Performance optimization (optional)**: Introduce zero-copy/read-view path in `RingBuffer` for Conv1D reads.
+3. **Regression safety (optional)**: Keep real-model stress tests and load diagnostics enabled in CI to catch future format/runtime regressions quickly.

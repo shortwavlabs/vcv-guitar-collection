@@ -522,7 +522,8 @@ private:
 // ============================================================================
 
 // Global flag to use fast tanh instead of std::tanh
-static bool g_useFastTanh = true;
+// Keep default aligned with original NAM behavior.
+static bool g_useFastTanh = false;
 
 inline void enableFastTanh() { g_useFastTanh = true; }
 inline void disableFastTanh() { g_useFastTanh = false; }
