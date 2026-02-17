@@ -138,7 +138,7 @@ Comprehensive documentation is available in the [manual](manual/) directory:
 ### Prerequisites
 
 **All Platforms:**
-- Git with submodule support
+- Git
 - VCV Rack SDK 2.6.x
 
 **Platform-specific:**
@@ -201,7 +201,6 @@ We welcome contributions! Whether it's bug reports, feature requests, documentat
 This plugin is licensed under the GNU General Public License v3.0 or later. See [LICENSE.md](LICENSE.md) for details.
 
 **Third-party Components:**
-- [Neural Amp Modeler Core](https://github.com/sdatkinson/NeuralAmpModelerCore) - Apache 2.0 License
 - Bundled NAM models - Licensed under their respective terms (see model metadata)
 
 ## 🙏 Acknowledgments
@@ -228,7 +227,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and release notes.
 
 #### Troubleshooting Build Issues
 
-- **Missing Eigen errors**: The NeuralAmpModelerCore submodule bundles Eigen. Ensure submodules are initialized.
+- **Missing Rack SDK errors**: Ensure `dep/Rack-SDK` is present and your include paths point to `dep/Rack-SDK/include` and `dep/Rack-SDK/dep/include`.
 - **C++17 errors**: This plugin requires C++17. Ensure your compiler supports it (GCC 9+, Clang 10+, MSVC 2019+).
 - **Symbol not found errors**: Run `make clean && make` to rebuild from scratch.
 
@@ -259,9 +258,7 @@ NAM models can be found at:
 
 ### Dependencies
 
-- **NeuralAmpModelerCore** v0.3.0 - Core NAM inference engine
-- **Eigen** 3.4 (bundled with NAM Core) - Linear algebra library
-- **nlohmann/json** (bundled with NAM Core) - JSON parsing
+- **nam_rack** (in-tree) - Core NAM inference engine
 - **VCV Rack SDK** 2.6.x - Plugin framework
 
 ### Audio Processing
