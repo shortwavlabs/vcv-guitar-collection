@@ -107,11 +107,9 @@ void Conv1D::process(const Matrix& input, int num_frames) {
     // Initialize output before accumulation (bias or zero)
     const long out_channels = getOutChannels();
     if (_bias.size() > 0) {
+        const float* bias_data = _bias.data();
         for (int f = 0; f < num_frames; f++) {
-            float* out_col = _output.col(f);
-            for (long c = 0; c < out_channels; c++) {
-                out_col[c] = _bias(c);
-            }
+            std::memcpy(_output.col(f), bias_data, static_cast<size_t>(out_channels) * sizeof(float));
         }
     } else {
         for (int f = 0; f < num_frames; f++) {

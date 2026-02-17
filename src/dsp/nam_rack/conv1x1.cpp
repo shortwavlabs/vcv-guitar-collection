@@ -70,7 +70,6 @@ void Conv1x1::process(const Matrix& input, int num_frames) {
             for (int f = 0; f < num_frames; f++) {
                 const float* in_col = input.col(f);
                 float* out_col = _output.col(f);
-
                 if (_doBias) {
                     for (long oc = 0; oc < out_channels; oc++) {
                         out_col[oc] = _bias(oc);
@@ -93,7 +92,6 @@ void Conv1x1::process(const Matrix& input, int num_frames) {
             for (int f = 0; f < num_frames; f++) {
                 const float* in_col = input.col(f);
                 float* out_col = _output.col(f);
-
                 if (_doBias) {
                     for (long oc = 0; oc < out_channels; oc++) {
                         out_col[oc] = _bias(oc);
@@ -119,7 +117,6 @@ void Conv1x1::process(const Matrix& input, int num_frames) {
             for (int f = 0; f < num_frames; f++) {
                 const float* in_col = input.col(f);
                 float* out_col = _output.col(f);
-
                 if (_doBias) {
                     for (long oc = 0; oc < out_channels; oc++) {
                         out_col[oc] = _bias(oc);
