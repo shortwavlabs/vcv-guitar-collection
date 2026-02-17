@@ -162,6 +162,7 @@ Plugin overview, installation instructions, and quick reference for both modules
 - [Loading Models](quickstart.md#loading-models) - How to load .nam files
 - [Input/Output Gain](quickstart.md#dialing-in-your-tone) - Set proper levels
 - [Noise Gate](quickstart.md#using-the-noise-gate) - Reduce unwanted noise
+- [Eco Mode](quickstart.md#eco-mode-cpu-savings) - Lower CPU with one toggle
 - [5-Band EQ](quickstart.md#tone-shaping-with-eq) - Shape your tone
 - [API: NamPlayer Class](api-reference.md#namplayer-module) - Technical reference
 
@@ -174,6 +175,7 @@ Plugin overview, installation instructions, and quick reference for both modules
 
 ### Performance & Optimization
 - [CPU Optimization](advanced-usage.md#performance-optimization) - Reduce CPU usage
+- [Eco Mode](advanced-usage.md#eco-mode-offon) - Fast performance toggle for NAM Player
 - [Memory Management](advanced-usage.md#memory-management) - Efficient resource use
 - [Sample Rate Considerations](advanced-usage.md#sample-rate-considerations) - Quality vs. performance
 - [Model Selection](advanced-usage.md#choosing-the-right-model) - Pick the right model

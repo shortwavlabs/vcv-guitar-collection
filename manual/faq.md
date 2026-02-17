@@ -218,7 +218,8 @@ Normalization scales the IR to 0dBFS peak level. This:
 1. **Increase buffer size**: Settings → Audio → Block size (512 or 1024)
 2. **Use lighter models**: Browse for models with "lite" or "nano" in the name
 3. **Reduce polyphony**: Limit to 1-4 voices
-4. **Lower sample rate**: 96kHz → 48kHz (Settings → Audio → Sample rate)
+4. **Enable Eco Mode**: Right-click NAM Player → Eco Mode → On
+5. **Lower sample rate**: 96kHz → 48kHz (Settings → Audio → Sample rate)
 
 See [Performance Optimization](advanced-usage.md#performance-optimization) for detailed strategies.
 
@@ -242,6 +243,17 @@ Model filename often indicates architecture (e.g., `*_lite.nam`).
 5. **Test thoroughly** before performance
 
 **Expected latency:** 3-10ms total (interface + VCV + model)
+
+### What is Eco Mode and when should I use it?
+
+Eco Mode is a NAM Player context-menu option with two states:
+
+- **Off**: Full processing quality (default)
+- **On**: Lower CPU usage
+
+Use **On** when running dense patches, higher sample rates, or live sets where CPU headroom is limited.
+
+**How to enable:** Right-click **NAM Player** → **Eco Mode** → **On**
 
 ### How much RAM does Guitar Tools use?
 

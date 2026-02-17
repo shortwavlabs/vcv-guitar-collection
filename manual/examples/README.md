@@ -149,6 +149,7 @@ Optimized patches for live use.
 
 **Contents:**
 - Low-latency configuration
+- NAM Player Eco Mode (Off/On) usage
 - Preset switching
 - Backup strategies
 - Performance tips

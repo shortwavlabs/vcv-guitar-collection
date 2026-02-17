@@ -45,6 +45,7 @@ NamPlayer::NamPlayer() {
     
     // Initialize DSP wrapper
     namDsp = std::unique_ptr<NamDSP>(new NamDSP());
+    namDsp->setEcoModeLevel(ecoModeLevel);
 
     // Pre-allocate buffers
     inputBuffer.resize(BLOCK_SIZE, 0.f);
@@ -65,6 +66,9 @@ NamPlayer::~NamPlayer() {
 void NamPlayer::process(const ProcessArgs& args) {
     if (hasPendingDsp.exchange(false, std::memory_order_acq_rel)) {
         namDsp = std::move(pendingDsp);
+        if (namDsp) {
+            namDsp->setEcoModeLevel(ecoModeLevel);
+        }
     }
     if (hasPendingUnload.exchange(false, std::memory_order_acq_rel)) {
         if (namDsp) {
@@ -75,9 +79,11 @@ void NamPlayer::process(const ProcessArgs& args) {
         double newRate = pendingSampleRate.load(std::memory_order_acquire);
         if (namDsp) {
             namDsp->setSampleRate(newRate);
+            namDsp->setEcoModeLevel(ecoModeLevel);
         }
         if (pendingDsp) {
             pendingDsp->setSampleRate(newRate);
+            pendingDsp->setEcoModeLevel(ecoModeLevel);
         }
     }
     // Get input with gain (line-level normalization: ±5V -> ±1.0)
@@ -247,6 +253,7 @@ void NamPlayer::loadModel(const std::string& path) {
     loadThread = std::thread([this, path]() {
         try {
             std::unique_ptr<NamDSP> newDsp(new NamDSP());
+            newDsp->setEcoModeLevel(ecoModeLevel);
 
             if (newDsp->loadModel(path)) {
                 INFO("[NAM][load] %s", newDsp->getLoadDiagnostics().c_str());
@@ -330,6 +337,7 @@ json_t* NamPlayer::dataToJson() {
     std::string path = getModelPath();
     json_object_set_new(rootJ, "modelPath", json_string(path.c_str()));
     json_object_set_new(rootJ, "waveformColor", json_integer(static_cast<int>(waveformColor)));
+    json_object_set_new(rootJ, "ecoModeLevel", json_integer(ecoModeLevel));
     return rootJ;
 }
 
@@ -348,6 +356,30 @@ void NamPlayer::dataFromJson(json_t* rootJ) {
         if (colorInt >= 0 && colorInt < static_cast<int>(WaveformColor::NUM_COLORS)) {
             waveformColor = static_cast<WaveformColor>(colorInt);
         }
+    }
+
+    json_t* ecoLevelJ = json_object_get(rootJ, "ecoModeLevel");
+    if (ecoLevelJ && json_is_integer(ecoLevelJ)) {
+        ecoModeLevel = static_cast<int>(json_integer_value(ecoLevelJ));
+    } else {
+        // Backward compatibility with old boolean field
+        json_t* ecoJ = json_object_get(rootJ, "ecoMode");
+        if (ecoJ) {
+            ecoModeLevel = json_is_true(ecoJ) ? NamDSP::ECO_ON : NamDSP::ECO_OFF;
+        }
+    }
+
+    if (ecoModeLevel < NamDSP::ECO_OFF) {
+        ecoModeLevel = NamDSP::ECO_OFF;
+    } else if (ecoModeLevel > NamDSP::ECO_ON) {
+        ecoModeLevel = NamDSP::ECO_ON;
+    }
+
+    if (namDsp) {
+        namDsp->setEcoModeLevel(ecoModeLevel);
+    }
+    if (pendingDsp) {
+        pendingDsp->setEcoModeLevel(ecoModeLevel);
     }
 }
 
@@ -462,6 +494,32 @@ void NamPlayerWidget::appendContextMenu(Menu* menu) {
     menu->addChild(createMenuItem("Unload Model", "", [=]() {
         module->unloadModel();
     }, !module->namDsp || !module->namDsp->isModelLoaded()));
+
+    menu->addChild(createSubmenuItem("Eco Mode", "", [=](Menu* submenu) {
+        struct EcoOption {
+            int level;
+            const char* label;
+        };
+        const EcoOption options[] = {
+            {NamDSP::ECO_OFF, "Off"},
+            {NamDSP::ECO_ON, "On"},
+        };
+
+        for (const auto& option : options) {
+            submenu->addChild(createMenuItem(option.label,
+                module->ecoModeLevel == option.level ? "✓" : "",
+                [=]() {
+                    module->ecoModeLevel = option.level;
+                    if (module->namDsp) {
+                        module->namDsp->setEcoModeLevel(module->ecoModeLevel);
+                    }
+                    if (module->pendingDsp) {
+                        module->pendingDsp->setEcoModeLevel(module->ecoModeLevel);
+                    }
+                }
+            ));
+        }
+    }));
 
     std::string modelName = module->getModelName();
     if (!modelName.empty()) {
@@ -585,6 +643,26 @@ void OutputDisplay::drawWaveform(const DrawArgs& args) {
         nvgRoundedRect(args.vg, x, centerY, kBarWidth, barHeight, 0.5f);
         nvgFillPaint(args.vg, gradient);
         nvgFill(args.vg);
+    }
+
+    // Eco mode badge
+    if (module->ecoModeLevel != NamDSP::ECO_OFF) {
+        const char* ecoLabel = "ECO ON";
+
+        nvgFontSize(args.vg, 11.0f);
+        nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+        nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
+
+        const float textX = box.size.x - 6.0f;
+        const float textY = 4.0f;
+
+        // Subtle shadow for readability
+        nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 180));
+        nvgText(args.vg, textX + 1.0f, textY + 1.0f, ecoLabel, NULL);
+
+        // Foreground color
+        nvgFillColor(args.vg, nvgRGBA(150, 220, 255, 220));
+        nvgText(args.vg, textX, textY, ecoLabel, NULL);
     }
 }
 

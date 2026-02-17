@@ -130,6 +130,15 @@ enum LightId {
 };
 ```
 
+#### Context Menu Options
+
+`NamPlayer` exposes an **Eco Mode** context-menu setting:
+
+- **Off**: Full processing quality (default)
+- **On**: Reduced CPU usage
+
+The module persists this state in patch data, with backward compatibility for older patches that stored a legacy boolean eco flag.
+
 #### Public Methods
 
 ##### `NamPlayer()`

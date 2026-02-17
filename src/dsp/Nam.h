@@ -315,6 +315,11 @@ struct ToneStack {
  */
 class NamDSP {
 public:
+    enum EcoModeLevel {
+        ECO_OFF = 0,
+        ECO_ON = 1
+    };
+
     static constexpr int MAX_BLOCK_SIZE = 2048;
     static constexpr int MAX_RESAMPLE_RATIO = 4;  // Support up to 4x resampling
     static constexpr float IDLE_GATE_EPSILON = 1.0e-6f;
@@ -326,6 +331,8 @@ public:
         resampleOutBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.f);
         modelOutputBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.f);
         gatedInputBuffer.resize(MAX_BLOCK_SIZE, 0.f);
+        ecoInputBuffer.resize(MAX_BLOCK_SIZE, 0.f);
+        ecoOutputBuffer.resize(MAX_BLOCK_SIZE, 0.f);
 
         // Initialize resamplers with quality setting
         srcIn.setQuality(4);  // Better performance (0-10 scale)
@@ -380,6 +387,18 @@ public:
     }
 
     bool isModelLoaded() const { return model != nullptr; }
+
+    void setEcoModeLevel(int level) {
+        if (level <= ECO_OFF) {
+            ecoModeLevel = ECO_OFF;
+        } else {
+            ecoModeLevel = ECO_ON;
+        }
+    }
+    int getEcoModeLevel() const { return ecoModeLevel; }
+
+    void setEcoMode(bool enabled) { setEcoModeLevel(enabled ? ECO_ON : ECO_OFF); }
+    bool isEcoModeEnabled() const { return ecoModeLevel != ECO_OFF; }
 
     double getModelSampleRate() const { return modelSampleRate; }
 
@@ -464,7 +483,42 @@ public:
             if (numFrames > static_cast<int>(modelOutputBuffer.size())) {
                 modelOutputBuffer.resize(numFrames, 0.f);
             }
-            model->process(gatedInputBuffer.data(), modelOutputBuffer.data(), numFrames);
+
+            bool usedEcoPath = false;
+            if (ecoModeLevel != ECO_OFF) {
+                if (ecoModeLevel == ECO_ON && numFrames >= 2) {
+                    const int ecoFrames = (numFrames + 1) / 2;
+                    if (ecoFrames > static_cast<int>(ecoInputBuffer.size())) {
+                        ecoInputBuffer.resize(ecoFrames, 0.f);
+                        ecoOutputBuffer.resize(ecoFrames, 0.f);
+                    }
+
+                    for (int i = 0; i < ecoFrames; i++) {
+                        const int src0 = 2 * i;
+                        const int src1 = (src0 + 1 < numFrames) ? (src0 + 1) : src0;
+                        ecoInputBuffer[i] = 0.5f * (gatedInputBuffer[src0] + gatedInputBuffer[src1]);
+                    }
+
+                    model->process(ecoInputBuffer.data(), ecoOutputBuffer.data(), ecoFrames);
+
+                    for (int i = 0; i < ecoFrames; i++) {
+                        const float left = ecoOutputBuffer[i];
+                        const float right = (i + 1 < ecoFrames) ? ecoOutputBuffer[i + 1] : left;
+                        const int dst = 2 * i;
+                        modelOutputBuffer[dst] = left;
+                        if (dst + 1 < numFrames) {
+                            modelOutputBuffer[dst + 1] = 0.5f * (left + right);
+                        }
+                    }
+
+                    usedEcoPath = true;
+                }
+            }
+
+            if (!usedEcoPath) {
+                model->process(gatedInputBuffer.data(), modelOutputBuffer.data(), numFrames);
+            }
+
             if (!toneStackActive) {
 #if NAM_RUNTIME_SANITIZE
                 for (int i = 0; i < numFrames; i++) {
@@ -509,7 +563,45 @@ public:
 
             // Process through NAM (all float now)
             if (processedFrames > 0) {
-                model->process(resampleInBuffer.data(), resampleOutBuffer.data(), processedFrames);
+                bool usedEcoPath = false;
+                if (ecoModeLevel != ECO_OFF) {
+                    const int factor = 2;
+                    if (processedFrames >= factor) {
+                        const int ecoFrames = (processedFrames + factor - 1) / factor;
+                        if (ecoFrames > static_cast<int>(ecoInputBuffer.size())) {
+                            ecoInputBuffer.resize(ecoFrames, 0.f);
+                            ecoOutputBuffer.resize(ecoFrames, 0.f);
+                        }
+
+                        for (int i = 0; i < ecoFrames; i++) {
+                            const int start = i * factor;
+                            const int end = std::min(start + factor, processedFrames);
+                            float sum = 0.0f;
+                            for (int s = start; s < end; s++) {
+                                sum += resampleInBuffer[s];
+                            }
+                            ecoInputBuffer[i] = sum / static_cast<float>(end - start);
+                        }
+
+                        model->process(ecoInputBuffer.data(), ecoOutputBuffer.data(), ecoFrames);
+
+                        for (int i = 0; i < ecoFrames; i++) {
+                            const float left = ecoOutputBuffer[i];
+                            const float right = (i + 1 < ecoFrames) ? ecoOutputBuffer[i + 1] : left;
+                            const int dst = 2 * i;
+                            resampleOutBuffer[dst] = left;
+                            if (dst + 1 < processedFrames) {
+                                resampleOutBuffer[dst + 1] = 0.5f * (left + right);
+                            }
+                        }
+
+                        usedEcoPath = true;
+                    }
+                }
+
+                if (!usedEcoPath) {
+                    model->process(resampleInBuffer.data(), resampleOutBuffer.data(), processedFrames);
+                }
             }
 
             // Downsample output to engine rate
@@ -592,6 +684,9 @@ private:
     std::vector<float> resampleOutBuffer;
     std::vector<float> modelOutputBuffer;
     std::vector<float> gatedInputBuffer;
+    std::vector<float> ecoInputBuffer;
+    std::vector<float> ecoOutputBuffer;
+    int ecoModeLevel = ECO_OFF;
     int idleGateSilentBlockCount = 0;
 
     void updateResamplerRates() {

@@ -13,6 +13,7 @@ Get up and running with Guitar Tools in minutes.
   - [Loading Models](#loading-models)
   - [Dialing in Your Tone](#dialing-in-your-tone)
   - [Using the Noise Gate](#using-the-noise-gate)
+   - [Eco Mode (CPU Savings)](#eco-mode-cpu-savings)
   - [Tone Shaping with EQ](#tone-shaping-with-eq)
 - [Cabinet Simulator Module](#cabinet-simulator-module)
   - [Loading Impulse Responses](#loading-impulse-responses)
@@ -32,6 +33,7 @@ Get up and running with Guitar Tools in minutes.
 - How to load and use amp models
 - How to add cabinet simulation
 - How to shape your tone
+- How to reduce CPU with Eco Mode
 - Common patching techniques
 
 ---
@@ -212,6 +214,30 @@ HOLD: 50ms
 ```
 
 **Visual Feedback:** The gate light shows when the gate is open (signal passing).
+
+### Eco Mode (CPU Savings)
+
+NAM Player includes an **Eco Mode** option to reduce CPU usage while keeping the same core workflow.
+
+#### Eco Mode States
+
+- **Off**: Full processing quality (default)
+- **On**: Lower CPU usage for heavier patches and live sets
+
+#### How to Enable
+
+1. **Right-click** NAM Player
+2. Open **Eco Mode**
+3. Select **On**
+
+When enabled, the module shows an **ECO ON** badge so you can quickly see which instances are optimized.
+
+**When to use it:**
+- Large patches with multiple NAM Player modules
+- Lower-latency live setups where CPU headroom is tight
+- Projects running at higher sample rates
+
+**Tip:** Start with Eco Mode Off while dialing in tones, then switch to On if you need extra headroom.
 
 ### Tone Shaping with EQ
 

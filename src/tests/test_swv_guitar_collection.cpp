@@ -555,6 +555,41 @@ namespace TestSuite
     }
   }
 
+  void test_nam_dsp_eco_mode_toggle(TestContext &ctx)
+  {
+    std::printf("Testing NamDSP eco mode toggle...\n");
+
+    NamDSP dsp;
+    dsp.setSampleRate(48000.0);
+
+    T_ASSERT(ctx, !dsp.isEcoModeEnabled());
+    dsp.setEcoMode(true);
+    T_ASSERT(ctx, dsp.isEcoModeEnabled());
+    dsp.setEcoMode(false);
+    T_ASSERT(ctx, !dsp.isEcoModeEnabled());
+
+    dsp.setEcoModeLevel(NamDSP::ECO_ON);
+    T_ASSERT(ctx, dsp.getEcoModeLevel() == NamDSP::ECO_ON);
+    dsp.setEcoModeLevel(-1);
+    T_ASSERT(ctx, dsp.getEcoModeLevel() == NamDSP::ECO_OFF);
+    dsp.setEcoModeLevel(99);
+    T_ASSERT(ctx, dsp.getEcoModeLevel() == NamDSP::ECO_ON);
+
+    // Passthrough should remain exact with no model loaded, regardless of eco mode.
+    const int numFrames = 64;
+    std::vector<float> input(numFrames);
+    std::vector<float> output(numFrames);
+    for (int i = 0; i < numFrames; i++) {
+      input[i] = 0.3f * std::sin(2.f * M_PI * 220.f * static_cast<float>(i) / 48000.f);
+    }
+
+    dsp.setEcoMode(true);
+    dsp.process(input.data(), output.data(), numFrames);
+    for (int i = 0; i < numFrames; i++) {
+      T_ASSERT_NEAR(ctx, output[i], input[i], 1e-6f);
+    }
+  }
+
   void benchmark_namplayer_style_control_path(TestContext &ctx)
   {
     std::printf("Benchmarking NamPlayer-style control path...\n");
@@ -619,10 +654,48 @@ namespace TestSuite
     std::printf("  NamPlayer-style (per-sample control): %.3f us/block\n", usPerBlockPerSampleControl);
     std::printf("  NamPlayer-style (per-block control): %.3f us/block\n", usPerBlockPerBlockControl);
 
+    auto runEcoBenchmark = [&](int ecoLevel) -> double {
+      dsp.setEcoModeLevel(ecoLevel);
+      volatile float sink = 0.0f;
+      auto t0 = std::chrono::high_resolution_clock::now();
+      for (int b = 0; b < numBlocks; b++) {
+        dsp.process(input.data(), output.data(), blockSize);
+        sink += output[b % blockSize];
+      }
+      auto t1 = std::chrono::high_resolution_clock::now();
+      (void)sink;
+      const auto us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+      return static_cast<double>(us) / static_cast<double>(numBlocks);
+    };
+
+    const double ecoOffUs = runEcoBenchmark(NamDSP::ECO_OFF);
+    const double ecoOnUs = runEcoBenchmark(NamDSP::ECO_ON);
+
+    std::printf("  Eco Off: %.3f us/block\n", ecoOffUs);
+    std::printf("  Eco On: %.3f us/block\n", ecoOnUs);
+
+    // Also benchmark with forced sample-rate mismatch (resampling path)
+    dsp.setSampleRate(44100.0);
+    const double ecoOffResampleUs = runEcoBenchmark(NamDSP::ECO_OFF);
+    const double ecoOnResampleUs = runEcoBenchmark(NamDSP::ECO_ON);
+
+    std::printf("  Eco Off (resample): %.3f us/block\n", ecoOffResampleUs);
+    std::printf("  Eco On (resample): %.3f us/block\n", ecoOnResampleUs);
+
+    dsp.setSampleRate(48000.0);
+
     T_ASSERT(ctx, std::isfinite(usPerBlockPerSampleControl));
     T_ASSERT(ctx, std::isfinite(usPerBlockPerBlockControl));
+    T_ASSERT(ctx, std::isfinite(ecoOffUs));
+    T_ASSERT(ctx, std::isfinite(ecoOnUs));
+    T_ASSERT(ctx, std::isfinite(ecoOffResampleUs));
+    T_ASSERT(ctx, std::isfinite(ecoOnResampleUs));
     T_ASSERT(ctx, usPerBlockPerSampleControl > 0.0);
     T_ASSERT(ctx, usPerBlockPerBlockControl > 0.0);
+    T_ASSERT(ctx, ecoOffUs > 0.0);
+    T_ASSERT(ctx, ecoOnUs > 0.0);
+    T_ASSERT(ctx, ecoOffResampleUs > 0.0);
+    T_ASSERT(ctx, ecoOnResampleUs > 0.0);
   }
 
   //------------------------------------------------------------------------------
@@ -1121,6 +1194,7 @@ namespace TestSuite
     test_nam_dsp_block_sizes(ctx);
     test_nam_dsp_dc_blocking(ctx);
     test_nam_dsp_extreme_values(ctx);
+    test_nam_dsp_eco_mode_toggle(ctx);
     benchmark_namplayer_style_control_path(ctx);
     
     // IRLoader tests
