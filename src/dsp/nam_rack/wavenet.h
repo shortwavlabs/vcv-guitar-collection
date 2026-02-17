@@ -54,6 +54,7 @@ private:
     Matrix mOutputHead;        // Skip output (activated conv output)
 
     activations::Activation* mActivation;
+    activations::Activation* mSigmoidActivation;
     bool mGated;
     int mBottleneck;
 };

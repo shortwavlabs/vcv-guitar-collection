@@ -49,7 +49,7 @@ public:
 
     void process(const Matrix& input, int num_frames);
 
-    Matrix& getOutput() { return mOutput; }
+    Matrix& getOutput() { return mBatchNorm ? mOutput : mConv.getOutput(); }
     long getOutChannels() const { return mConv.getOutChannels(); }
 
 private:
@@ -92,6 +92,7 @@ protected:
 
 private:
     std::vector<ConvNetBlock> mBlocks;
+    Matrix mInputMatrix;  // Reused single-channel input view for first block
     Matrix mBlockVal;  // For head input
     Vector mHeadOutput;
     Head mHead;

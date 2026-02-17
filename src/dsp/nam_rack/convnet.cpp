@@ -85,22 +85,21 @@ void ConvNetBlock::setMaxBufferSize(int maxBufferSize) {
 void ConvNetBlock::process(const Matrix& input, int num_frames) {
     // Process through Conv1D
     mConv.process(input, num_frames);
+    Matrix& conv_output = mConv.getOutput();
 
-    // Copy to our output buffer
-    const Matrix& conv_output = mConv.getOutput();
-    for (int c = 0; c < mOutput.rows(); c++) {
-        for (int f = 0; f < num_frames; f++) {
-            mOutput(c, f) = conv_output(c, f);
-        }
-    }
-
-    // Apply batch normalization if present
     if (mBatchNorm) {
-        mBatchNormLayer.process(mOutput, 0, num_frames);
-    }
+        // BatchNorm mutates in place, so copy Conv1D output into our scratch buffer.
+        const size_t rowBytes = static_cast<size_t>(mOutput.rows()) * sizeof(float);
+        for (int f = 0; f < num_frames; f++) {
+            std::memcpy(mOutput.col(f), conv_output.col(f), rowBytes);
+        }
 
-    // Apply activation
-    mActivation->apply(mOutput);
+        mBatchNormLayer.process(mOutput, 0, num_frames);
+        mActivation->apply(mOutput);
+    } else {
+        // No BatchNorm: activate Conv1D output in place and avoid a full matrix copy.
+        mActivation->apply(conv_output);
+    }
 }
 
 // ============================================================================
@@ -166,17 +165,15 @@ void ConvNet::process(NAM_SAMPLE* input, NAM_SAMPLE* output, int num_frames) {
 
     const long i_start = mInputBufferOffset;
 
-    // Create input matrix for first block
-    Matrix input_matrix;
-    input_matrix.resize(1, num_frames);
+    // Fill reused input matrix for first block
     for (int i = 0; i < num_frames; i++) {
-        input_matrix(0, i) = mInputBuffer[i_start + i];
+        mInputMatrix(0, i) = mInputBuffer[i_start + i];
     }
 
     // Process through all blocks
     for (size_t i = 0; i < mBlocks.size(); i++) {
         if (i == 0) {
-            mBlocks[i].process(input_matrix, num_frames);
+            mBlocks[i].process(mInputMatrix, num_frames);
         } else {
             mBlocks[i].process(mBlocks[i - 1].getOutput(), num_frames);
         }
@@ -210,6 +207,9 @@ void ConvNet::process(NAM_SAMPLE* input, NAM_SAMPLE* output, int num_frames) {
 
 void ConvNet::setMaxBufferSize(int maxBufferSize) {
     DSP::setMaxBufferSize(maxBufferSize);
+
+    mInputMatrix.resize(1, maxBufferSize);
+    mInputMatrix.setZero();
 
     for (auto& block : mBlocks) {
         block.setMaxBufferSize(maxBufferSize);

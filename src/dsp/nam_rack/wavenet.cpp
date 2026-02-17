@@ -17,6 +17,7 @@ Layer::Layer(int condition_size, int channels, int bottleneck, int kernel_size,
     , mInputMixin(condition_size, gated ? 2 * bottleneck : bottleneck, false)
     , m1x1(bottleneck, channels, true, groups_1x1)
     , mActivation(activations::Activation::get(activation))
+    , mSigmoidActivation(activations::Activation::get("Sigmoid"))
     , mGated(gated)
     , mBottleneck(bottleneck) {
 }
@@ -79,11 +80,10 @@ void Layer::process(const Matrix& input, const Matrix& condition, int num_frames
         m1x1.process(mZ, num_frames);
     } else {
         // Gated activation: tanh(z[0:b]) * sigmoid(z[b:2b])
-        activations::Activation* sigmoidActivation = activations::Activation::get("Sigmoid");
         for (int f = 0; f < num_frames; f++) {
             float* col = mZ.col(f);
             mActivation->apply(col, mBottleneck);
-            sigmoidActivation->apply(col + mBottleneck, mBottleneck);
+            mSigmoidActivation->apply(col + mBottleneck, mBottleneck);
             float* top_col = mTopRows.col(f);
             float* head_col = mOutputHead.col(f);
             for (int c = 0; c < mBottleneck; c++) {
