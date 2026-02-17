@@ -103,7 +103,9 @@ NAM_RACK_BIN="${OUT_DIR}/build_test_nam_rack"
   -Isrc \
   -o "$NAM_RACK_BIN" \
   src/tests/test_nam_rack.cpp \
-  src/dsp/nam_rack/ring_buffer.cpp
+  src/dsp/nam_rack/ring_buffer.cpp \
+  src/dsp/nam_rack/conv1d.cpp \
+  src/dsp/nam_rack/conv1x1.cpp
 
 if ! "$NAM_RACK_BIN"; then
   EXIT_CODE=$?
