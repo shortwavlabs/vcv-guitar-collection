@@ -63,24 +63,34 @@ void Conv1x1::process(const Matrix& input, int num_frames) {
     const long out_channels = getOutChannels();
     const long in_per_group = in_channels / _numGroups;
     const long out_per_group = out_channels / _numGroups;
+    const size_t out_bytes = static_cast<size_t>(out_channels) * sizeof(float);
 
     if (_numGroups == 1) {
         if (in_channels == 1) {
             const float* w0 = _weight.col(0);
-            for (int f = 0; f < num_frames; f++) {
-                const float* in_col = input.col(f);
-                float* out_col = _output.col(f);
-                if (_doBias) {
+            if (_doBias) {
+                for (int f = 0; f < num_frames; f++) {
+                    const float* in_col = input.col(f);
+                    float* out_col = _output.col(f);
                     for (long oc = 0; oc < out_channels; oc++) {
                         out_col[oc] = _bias(oc);
                     }
-                } else {
-                    std::memset(out_col, 0, static_cast<size_t>(out_channels) * sizeof(float));
-                }
 
-                const float x0 = in_col[0];
-                for (long oc = 0; oc < out_channels; oc++) {
-                    out_col[oc] += w0[oc] * x0;
+                    const float x0 = in_col[0];
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w0[oc] * x0;
+                    }
+                }
+            } else {
+                for (int f = 0; f < num_frames; f++) {
+                    const float* in_col = input.col(f);
+                    float* out_col = _output.col(f);
+                    std::memset(out_col, 0, out_bytes);
+
+                    const float x0 = in_col[0];
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w0[oc] * x0;
+                    }
                 }
             }
             return;
@@ -89,21 +99,31 @@ void Conv1x1::process(const Matrix& input, int num_frames) {
         if (in_channels == 2) {
             const float* w0 = _weight.col(0);
             const float* w1 = _weight.col(1);
-            for (int f = 0; f < num_frames; f++) {
-                const float* in_col = input.col(f);
-                float* out_col = _output.col(f);
-                if (_doBias) {
+            if (_doBias) {
+                for (int f = 0; f < num_frames; f++) {
+                    const float* in_col = input.col(f);
+                    float* out_col = _output.col(f);
                     for (long oc = 0; oc < out_channels; oc++) {
                         out_col[oc] = _bias(oc);
                     }
-                } else {
-                    std::memset(out_col, 0, static_cast<size_t>(out_channels) * sizeof(float));
-                }
 
-                const float x0 = in_col[0];
-                const float x1 = in_col[1];
-                for (long oc = 0; oc < out_channels; oc++) {
-                    out_col[oc] += w0[oc] * x0 + w1[oc] * x1;
+                    const float x0 = in_col[0];
+                    const float x1 = in_col[1];
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w0[oc] * x0 + w1[oc] * x1;
+                    }
+                }
+            } else {
+                for (int f = 0; f < num_frames; f++) {
+                    const float* in_col = input.col(f);
+                    float* out_col = _output.col(f);
+                    std::memset(out_col, 0, out_bytes);
+
+                    const float x0 = in_col[0];
+                    const float x1 = in_col[1];
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w0[oc] * x0 + w1[oc] * x1;
+                    }
                 }
             }
             return;
@@ -114,73 +134,111 @@ void Conv1x1::process(const Matrix& input, int num_frames) {
             const float* w1 = _weight.col(1);
             const float* w2 = _weight.col(2);
             const float* w3 = _weight.col(3);
-            for (int f = 0; f < num_frames; f++) {
-                const float* in_col = input.col(f);
-                float* out_col = _output.col(f);
-                if (_doBias) {
+            if (_doBias) {
+                for (int f = 0; f < num_frames; f++) {
+                    const float* in_col = input.col(f);
+                    float* out_col = _output.col(f);
                     for (long oc = 0; oc < out_channels; oc++) {
                         out_col[oc] = _bias(oc);
                     }
-                } else {
-                    std::memset(out_col, 0, static_cast<size_t>(out_channels) * sizeof(float));
-                }
 
-                const float x0 = in_col[0];
-                const float x1 = in_col[1];
-                const float x2 = in_col[2];
-                const float x3 = in_col[3];
-                for (long oc = 0; oc < out_channels; oc++) {
-                    out_col[oc] += w0[oc] * x0 + w1[oc] * x1 + w2[oc] * x2 + w3[oc] * x3;
+                    const float x0 = in_col[0];
+                    const float x1 = in_col[1];
+                    const float x2 = in_col[2];
+                    const float x3 = in_col[3];
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w0[oc] * x0 + w1[oc] * x1 + w2[oc] * x2 + w3[oc] * x3;
+                    }
+                }
+            } else {
+                for (int f = 0; f < num_frames; f++) {
+                    const float* in_col = input.col(f);
+                    float* out_col = _output.col(f);
+                    std::memset(out_col, 0, out_bytes);
+
+                    const float x0 = in_col[0];
+                    const float x1 = in_col[1];
+                    const float x2 = in_col[2];
+                    const float x3 = in_col[3];
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w0[oc] * x0 + w1[oc] * x1 + w2[oc] * x2 + w3[oc] * x3;
+                    }
                 }
             }
             return;
         }
 
-        for (int f = 0; f < num_frames; f++) {
-            const float* in_col = input.col(f);
-            float* out_col = _output.col(f);
-
-            // Initialize output column (bias or zero)
-            if (_doBias) {
+        if (_doBias) {
+            for (int f = 0; f < num_frames; f++) {
+                const float* in_col = input.col(f);
+                float* out_col = _output.col(f);
                 for (long oc = 0; oc < out_channels; oc++) {
                     out_col[oc] = _bias(oc);
                 }
-            } else {
-                std::memset(out_col, 0, static_cast<size_t>(out_channels) * sizeof(float));
-            }
 
-            // Column-major friendly accumulation
-            for (long ic = 0; ic < in_channels; ic++) {
-                const float x = in_col[ic];
-                const float* w_col = _weight.col(static_cast<int>(ic));
-                for (long oc = 0; oc < out_channels; oc++) {
-                    out_col[oc] += w_col[oc] * x;
+                // Column-major friendly accumulation
+                for (long ic = 0; ic < in_channels; ic++) {
+                    const float x = in_col[ic];
+                    const float* w_col = _weight.col(static_cast<int>(ic));
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w_col[oc] * x;
+                    }
+                }
+            }
+        } else {
+            for (int f = 0; f < num_frames; f++) {
+                const float* in_col = input.col(f);
+                float* out_col = _output.col(f);
+                std::memset(out_col, 0, out_bytes);
+
+                // Column-major friendly accumulation
+                for (long ic = 0; ic < in_channels; ic++) {
+                    const float x = in_col[ic];
+                    const float* w_col = _weight.col(static_cast<int>(ic));
+                    for (long oc = 0; oc < out_channels; oc++) {
+                        out_col[oc] += w_col[oc] * x;
+                    }
                 }
             }
         }
     } else {
-        for (int f = 0; f < num_frames; f++) {
-            const float* in_col = input.col(f);
-            float* out_col = _output.col(f);
-
-            // Initialize output column (bias or zero)
-            if (_doBias) {
+        if (_doBias) {
+            for (int f = 0; f < num_frames; f++) {
+                const float* in_col = input.col(f);
+                float* out_col = _output.col(f);
                 for (long oc = 0; oc < out_channels; oc++) {
                     out_col[oc] = _bias(oc);
                 }
-            } else {
-                std::memset(out_col, 0, static_cast<size_t>(out_channels) * sizeof(float));
+
+                for (int g = 0; g < _numGroups; g++) {
+                    const long in_base = g * in_per_group;
+                    const long out_base = g * out_per_group;
+
+                    for (long ic = 0; ic < in_per_group; ic++) {
+                        const float x = in_col[in_base + ic];
+                        const float* w_col = _weight.col(static_cast<int>(in_base + ic));
+                        for (long oc = 0; oc < out_per_group; oc++) {
+                            out_col[out_base + oc] += w_col[out_base + oc] * x;
+                        }
+                    }
+                }
             }
+        } else {
+            for (int f = 0; f < num_frames; f++) {
+                const float* in_col = input.col(f);
+                float* out_col = _output.col(f);
+                std::memset(out_col, 0, out_bytes);
 
-            for (int g = 0; g < _numGroups; g++) {
-                const long in_base = g * in_per_group;
-                const long out_base = g * out_per_group;
+                for (int g = 0; g < _numGroups; g++) {
+                    const long in_base = g * in_per_group;
+                    const long out_base = g * out_per_group;
 
-                for (long ic = 0; ic < in_per_group; ic++) {
-                    const float x = in_col[in_base + ic];
-                    const float* w_col = _weight.col(static_cast<int>(in_base + ic));
-                    for (long oc = 0; oc < out_per_group; oc++) {
-                        out_col[out_base + oc] += w_col[out_base + oc] * x;
+                    for (long ic = 0; ic < in_per_group; ic++) {
+                        const float x = in_col[in_base + ic];
+                        const float* w_col = _weight.col(static_cast<int>(in_base + ic));
+                        for (long oc = 0; oc < out_per_group; oc++) {
+                            out_col[out_base + oc] += w_col[out_base + oc] * x;
+                        }
                     }
                 }
             }
