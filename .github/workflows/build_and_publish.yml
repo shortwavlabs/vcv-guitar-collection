@@ -20,7 +20,7 @@ jobs:
           - os: windows-latest
             platform_name: win-x64
             sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-win-x64.zip
-          - os: macos-14
+          - os: macos-latest
             platform_name: mac-arm64
             sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-mac-arm64.zip
 
@@ -40,7 +40,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev jq zstd
+          sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev jq zstd libjack-jackd2-dev libpulse-dev
 
       # ------------------------------------------------------------------------
       # Setup Dependencies (Mac)
