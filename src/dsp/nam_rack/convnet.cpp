@@ -78,8 +78,6 @@ void ConvNetBlock::setWeights(int in_channels, int out_channels, int dilation,
 
 void ConvNetBlock::setMaxBufferSize(int maxBufferSize) {
     mConv.setMaxBufferSize(maxBufferSize);
-    mOutput.resize(mConv.getOutChannels(), maxBufferSize);
-    mOutput.setZero();
 }
 
 void ConvNetBlock::process(const Matrix& input, int num_frames) {
@@ -88,18 +86,10 @@ void ConvNetBlock::process(const Matrix& input, int num_frames) {
     Matrix& conv_output = mConv.getOutput();
 
     if (mBatchNorm) {
-        // BatchNorm mutates in place, so copy Conv1D output into our scratch buffer.
-        const size_t rowBytes = static_cast<size_t>(mOutput.rows()) * sizeof(float);
-        for (int f = 0; f < num_frames; f++) {
-            std::memcpy(mOutput.col(f), conv_output.col(f), rowBytes);
-        }
-
-        mBatchNormLayer.process(mOutput, 0, num_frames);
-        mActivation->apply(mOutput);
-    } else {
-        // No BatchNorm: activate Conv1D output in place and avoid a full matrix copy.
-        mActivation->apply(conv_output);
+        mBatchNormLayer.process(conv_output, 0, num_frames);
     }
+
+    mActivation->apply(conv_output);
 }
 
 // ============================================================================

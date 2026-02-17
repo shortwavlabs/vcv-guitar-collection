@@ -49,7 +49,7 @@ public:
 
     void process(const Matrix& input, int num_frames);
 
-    Matrix& getOutput() { return mBatchNorm ? mOutput : mConv.getOutput(); }
+    Matrix& getOutput() { return mConv.getOutput(); }
     long getOutChannels() const { return mConv.getOutChannels(); }
 
 private:
@@ -57,7 +57,6 @@ private:
     BatchNorm mBatchNormLayer;
     bool mBatchNorm;
     activations::Activation* mActivation;
-    Matrix mOutput;
 };
 
 /**
