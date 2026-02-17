@@ -39,19 +39,16 @@ rm -f ./*.gcda ./*.gcno
 OUT_DIR="$COV_DIR"
 OUT_BIN="${OUT_DIR}/test_with_coverage"
 
-# NAM paths
-NAM_DIR="dep/NeuralAmpModelerCore"
-
-# NAM source files needed for tests
-NAM_SOURCES="$NAM_DIR/NAM/activations.cpp"
-NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/conv1d.cpp"
-NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/convnet.cpp"
-NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/dsp.cpp"
-NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/get_dsp.cpp"
-NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/lstm.cpp"
-NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/ring_buffer.cpp"
-NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/util.cpp"
-NAM_SOURCES="$NAM_SOURCES $NAM_DIR/NAM/wavenet.cpp"
+# nam_rack source files
+NAM_RACK_SOURCES="src/dsp/nam_rack/ring_buffer.cpp"
+NAM_RACK_SOURCES="$NAM_RACK_SOURCES src/dsp/nam_rack/conv1d.cpp"
+NAM_RACK_SOURCES="$NAM_RACK_SOURCES src/dsp/nam_rack/conv1x1.cpp"
+NAM_RACK_SOURCES="$NAM_RACK_SOURCES src/dsp/nam_rack/dsp.cpp"
+NAM_RACK_SOURCES="$NAM_RACK_SOURCES src/dsp/nam_rack/linear.cpp"
+NAM_RACK_SOURCES="$NAM_RACK_SOURCES src/dsp/nam_rack/convnet.cpp"
+NAM_RACK_SOURCES="$NAM_RACK_SOURCES src/dsp/nam_rack/wavenet.cpp"
+NAM_RACK_SOURCES="$NAM_RACK_SOURCES src/dsp/nam_rack/lstm.cpp"
+NAM_RACK_SOURCES="$NAM_RACK_SOURCES src/dsp/nam_rack/model_loader.cpp"
 
 # Detect OS for platform-specific linking
 UNAME_S=$(uname -s)
@@ -61,36 +58,30 @@ COVERAGE_FLAGS="--coverage -fprofile-arcs -ftest-coverage -O0 -g"
 
 echo "Compiling tests with coverage instrumentation..."
 
-# Compile with NAM includes, VCV Rack SDK includes, and coverage flags
+# Compile with VCV Rack SDK includes and coverage flags
 if [[ "$UNAME_S" == "MINGW"* || "$UNAME_S" == "MSYS"* ]]; then
   # Windows: link to libRack.dll.a in SDK root
-  "$CXX" -std=c++17 -Wall $COVERAGE_FLAGS \
+  "$CXX" -std=c++11 -Wall $COVERAGE_FLAGS \
     -Isrc \
-    -I"$NAM_DIR" \
-    -I"$NAM_DIR/Dependencies/eigen" \
-    -I"$NAM_DIR/Dependencies/nlohmann" \
     -Idep/Rack-SDK/include \
     -Idep/Rack-SDK/dep/include \
     -DSHORTWAV_DSP_RUN_TESTS \
     -D_USE_MATH_DEFINES \
     -o "$OUT_BIN" \
     src/tests/test_swv_guitar_collection.cpp \
-    $NAM_SOURCES \
+    $NAM_RACK_SOURCES \
     dep/Rack-SDK/libRack.dll.a
 else
   # macOS/Linux: use -L and -l flags
-  "$CXX" -std=c++17 -Wall $COVERAGE_FLAGS \
+  "$CXX" -std=c++11 -Wall $COVERAGE_FLAGS \
     -Isrc \
-    -I"$NAM_DIR" \
-    -I"$NAM_DIR/Dependencies/eigen" \
-    -I"$NAM_DIR/Dependencies/nlohmann" \
     -Idep/Rack-SDK/include \
     -Idep/Rack-SDK/dep/include \
     -DSHORTWAV_DSP_RUN_TESTS \
     -D_USE_MATH_DEFINES \
     -o "$OUT_BIN" \
     src/tests/test_swv_guitar_collection.cpp \
-    $NAM_SOURCES \
+    $NAM_RACK_SOURCES \
     -Ldep/Rack-SDK \
     -lRack \
     -Wl,-rpath,@executable_path/../../dep/Rack-SDK
@@ -126,7 +117,7 @@ echo ""
 
 NAM_RACK_BIN="${OUT_DIR}/test_nam_rack_coverage"
 
-# Compile nam_rack tests (standalone, no NAM/Eigen dependencies)
+# Compile nam_rack tests
 "$CXX" -std=c++11 -Wall $COVERAGE_FLAGS \
   -Isrc \
   -Idep/Rack-SDK/include \

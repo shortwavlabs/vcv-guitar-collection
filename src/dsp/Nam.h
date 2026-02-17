@@ -5,9 +5,13 @@
 #define _USE_MATH_DEFINES
 #endif
 
-#include "NAM/dsp.h"
-#include "NAM/get_dsp.h"
-#include "NAM/activations.h"
+// Use float for NAM_SAMPLE (more efficient for audio processing)
+#define NAM_SAMPLE_FLOAT
+
+// Use the new nam_rack implementation (no Eigen dependency)
+#include "nam_rack/dsp.h"
+#include "nam_rack/model_loader.h"
+#include "nam_rack/activations.h"
 
 // Use VCV Rack's resampler instead of libsamplerate
 #include <dsp/resampler.hpp>
@@ -16,7 +20,6 @@
 #include <vector>
 #include <string>
 #include <cmath>
-#include <Eigen/Dense>
 
 /**
  * BiquadFilter - Second-order IIR filter for tone shaping
@@ -241,96 +244,92 @@ struct ToneStack {
 
 /**
  * NamDSP - Wrapper for Neural Amp Modeler DSP with resampling support
- * 
+ *
  * Handles:
  * - Model loading and management
  * - Sample rate conversion (engine rate <-> model rate) using VCV Rack's Speex resampler
- * - Proper Eigen memory alignment
  * - Passthrough when no model loaded
  * - Noise gate (before NAM processing)
  * - 5-band tone stack (after NAM processing)
  */
 class NamDSP {
 public:
-    // Eigen alignment macro for classes containing Eigen types
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    
     static constexpr int MAX_BLOCK_SIZE = 2048;
     static constexpr int MAX_RESAMPLE_RATIO = 4;  // Support up to 4x resampling
-    
+
     NamDSP() {
         // Pre-allocate buffers
         resampleInBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.f);
         resampleOutBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.f);
-        modelInputBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.0);
-        modelOutputBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.0);
+        modelInputBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.f);
+        modelOutputBuffer.resize(MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO, 0.f);
         gatedInputBuffer.resize(MAX_BLOCK_SIZE, 0.f);
-        
+
         // Initialize resamplers with quality setting
         srcIn.setQuality(4);  // Better performance (0-10 scale)
         srcOut.setQuality(4);
     }
-    
+
     ~NamDSP() = default;
-    
+
     // Model management
     bool loadModel(const std::string& path) {
         try {
-            auto newModel = nam::get_dsp(path);
+            auto newModel = nam::loadModel(path);
             if (!newModel) {
                 return false;
             }
-            
+
             // Get model sample rate
-            modelSampleRate = newModel->GetExpectedSampleRate();
+            modelSampleRate = newModel->getExpectedSampleRate();
             if (modelSampleRate <= 0) {
                 modelSampleRate = 48000.0;  // Default if not specified
             }
-            
+
             // Initialize the model
-            newModel->Reset(modelSampleRate, MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO);
+            newModel->reset(modelSampleRate, MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO);
             newModel->prewarm();
-            
+
             model = std::move(newModel);
             modelPath = path;
-            
+
             // Update resampler rates
             updateResamplerRates();
-            
+
             return true;
         } catch (...) {
             return false;
         }
     }
-    
+
     void unloadModel() {
         model.reset();
         modelPath.clear();
     }
-    
+
     bool isModelLoaded() const { return model != nullptr; }
-    
+
     double getModelSampleRate() const { return modelSampleRate; }
-    
+
     std::string getModelPath() const { return modelPath; }
-    
+
     std::string getModelName() const {
         if (modelPath.empty()) return "";
-        
+
         // Extract filename without path
         size_t lastSlash = modelPath.find_last_of("/\\");
-        std::string filename = (lastSlash != std::string::npos) ? 
+        std::string filename = (lastSlash != std::string::npos) ?
                               modelPath.substr(lastSlash + 1) : modelPath;
-        
+
         // Remove extension
         size_t lastDot = filename.find_last_of('.');
         if (lastDot != std::string::npos) {
             filename = filename.substr(0, lastDot);
         }
-        
+
         return filename;
     }
-    
+
     // Processing
     void setSampleRate(double rate) {
         if (std::abs(engineSampleRate - rate) > 0.1) {
@@ -340,14 +339,14 @@ public:
             updateResamplerRates();
         }
     }
-    
+
     void process(const float* input, float* output, int numFrames) {
         if (!model) {
             // Passthrough when no model
             std::copy(input, input + numFrames, output);
             return;
         }
-        
+
         // Apply noise gate to input
         if (numFrames > static_cast<int>(gatedInputBuffer.size())) {
             gatedInputBuffer.resize(numFrames, 0.f);
@@ -355,107 +354,96 @@ public:
         for (int i = 0; i < numFrames; i++) {
             gatedInputBuffer[i] = noiseGate.process(input[i]);
         }
-        
+
         // Check if resampling is needed
         double ratio = modelSampleRate / engineSampleRate;
-        
+
         if (std::abs(ratio - 1.0) < 0.001) {
             // No resampling needed - direct processing
+            model->process(gatedInputBuffer.data(), modelOutputBuffer.data(), numFrames);
             for (int i = 0; i < numFrames; i++) {
-                modelInputBuffer[i] = static_cast<double>(gatedInputBuffer[i]);
-            }
-            model->process(modelInputBuffer.data(), modelOutputBuffer.data(), numFrames);
-            for (int i = 0; i < numFrames; i++) {
-                output[i] = toneStack.process(static_cast<float>(modelOutputBuffer[i]));
+                output[i] = toneStack.process(modelOutputBuffer[i]);
             }
         } else {
             // Resampling required using Rack's SampleRateConverter
             int maxResampledFrames = static_cast<int>(numFrames * ratio) + 16;
             maxResampledFrames = std::min(maxResampledFrames, static_cast<int>(resampleInBuffer.size()));
-            
+
             // Upsample input to model rate
             int inFrames = numFrames;
             int outFrames = maxResampledFrames;
             srcIn.process(gatedInputBuffer.data(), 1, &inFrames, resampleInBuffer.data(), 1, &outFrames);
-            
+
             int processedFrames = outFrames;
-            
-            // Convert to double and process through NAM
-            for (int i = 0; i < processedFrames; i++) {
-                modelInputBuffer[i] = static_cast<double>(resampleInBuffer[i]);
-            }
-            model->process(modelInputBuffer.data(), modelOutputBuffer.data(), processedFrames);
-            
-            // Convert back to float
-            for (int i = 0; i < processedFrames; i++) {
-                resampleOutBuffer[i] = static_cast<float>(modelOutputBuffer[i]);
-            }
-            
+
+            // Process through NAM (all float now)
+            model->process(resampleInBuffer.data(), resampleOutBuffer.data(), processedFrames);
+
             // Downsample output to engine rate
             inFrames = processedFrames;
             outFrames = numFrames;
             srcOut.process(resampleOutBuffer.data(), 1, &inFrames, output, 1, &outFrames);
-            
+
             // Apply tone stack to output
             for (int i = 0; i < numFrames; i++) {
                 output[i] = toneStack.process(output[i]);
             }
         }
     }
-    
+
     void reset() {
         if (model) {
-            model->Reset(modelSampleRate, MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO);
+            model->reset(modelSampleRate, MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO);
         }
         noiseGate.reset();
         toneStack.reset();
         updateResamplerRates();
     }
-    
+
     // Noise Gate control
     void setNoiseGate(float thresholdDb, float attackMs, float releaseMs, float holdMs) {
         noiseGate.setParameters(thresholdDb, attackMs, releaseMs, holdMs);
     }
-    
+
     bool isGateOpen() const { return noiseGate.isOpen; }
-    
+
     // Tone Stack control (values in dB, typically -12 to +12)
     void setToneStack(float bass, float middle, float treble, float presence, float depth) {
         toneStack.setParameters(bass, middle, treble, presence, depth);
     }
-    
+
     // Monitoring
-    bool isSampleRateMismatched() const { 
-        return std::abs(engineSampleRate - modelSampleRate) > 1.0; 
+    bool isSampleRateMismatched() const {
+        return std::abs(engineSampleRate - modelSampleRate) > 1.0;
     }
-    
+
 private:
     std::unique_ptr<nam::DSP> model;
     std::string modelPath;
-    
+
     // Resampling state using VCV Rack's SampleRateConverter (Speex-based)
     rack::dsp::SampleRateConverter<1> srcIn;
     rack::dsp::SampleRateConverter<1> srcOut;
     double engineSampleRate = 48000.0;
     double modelSampleRate = 48000.0;
-    
+
     // Noise Gate (before NAM)
     NoiseGate noiseGate;
-    
+
     // Tone Stack (5-band EQ, after NAM)
     ToneStack toneStack;
-    
-    // Pre-allocated buffers for resampling
+
+    // Pre-allocated buffers for resampling (all float now, no Eigen)
     std::vector<float> resampleInBuffer;
     std::vector<float> resampleOutBuffer;
-    std::vector<double> modelInputBuffer;
-    std::vector<double> modelOutputBuffer;
+    std::vector<float> modelInputBuffer;
+    std::vector<float> modelOutputBuffer;
     std::vector<float> gatedInputBuffer;
-    
+
     void updateResamplerRates() {
         // srcIn: engine rate -> model rate (upsample if model rate > engine rate)
         srcIn.setRates(static_cast<int>(engineSampleRate), static_cast<int>(modelSampleRate));
-        
+
         // srcOut: model rate -> engine rate (downsample if model rate > engine rate)
         srcOut.setRates(static_cast<int>(modelSampleRate), static_cast<int>(engineSampleRate));
     }

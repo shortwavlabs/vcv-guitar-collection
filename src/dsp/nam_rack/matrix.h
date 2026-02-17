@@ -8,20 +8,12 @@
  * - Column-major storage (compatible with NAM's access patterns)
  * - No dynamic allocation during audio processing
  * - Minimal API covering only what NAM needs
- * - SIMD optimization using Rack SDK's float_4
  */
 
 #include <vector>
 #include <cstring>
 #include <cassert>
 #include <algorithm>
-
-// Forward declarations for Rack SIMD (available when building as Rack plugin)
-namespace rack {
-namespace simd {
-    struct float_4;
-}
-}
 
 namespace nam {
 

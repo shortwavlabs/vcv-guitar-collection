@@ -39,15 +39,15 @@ NamPlayer::NamPlayer() {
     configInput(CV_DEPTH_INPUT, "Depth CV");
     
     // Initialize DSP wrapper
-    namDsp = std::make_unique<NamDSP>();
-    
+    namDsp = std::unique_ptr<NamDSP>(new NamDSP());
+
     // Pre-allocate buffers
     inputBuffer.resize(BLOCK_SIZE, 0.f);
     outputBuffer.resize(BLOCK_SIZE, 0.f);
     displayBuffer.resize(DISPLAY_BUFFER_SIZE, 0.f);
-    
+
     // Enable fast tanh for better performance
-    nam::activations::Activation::enable_fast_tanh();
+    nam::activations::enableFastTanh();
 }
 
 NamPlayer::~NamPlayer() {
@@ -226,8 +226,8 @@ void NamPlayer::loadModel(const std::string& path) {
     
     loadThread = std::thread([this, path]() {
         try {
-            auto newDsp = std::make_unique<NamDSP>();
-            
+            std::unique_ptr<NamDSP> newDsp(new NamDSP());
+
             if (newDsp->loadModel(path)) {
                 // Initialize with current sample rate
                 newDsp->setSampleRate(currentSampleRate.load(std::memory_order_acquire));
