@@ -256,6 +256,8 @@ class NamDSP {
 public:
     static constexpr int MAX_BLOCK_SIZE = 2048;
     static constexpr int MAX_RESAMPLE_RATIO = 4;  // Support up to 4x resampling
+    static constexpr float IDLE_GATE_EPSILON = 1.0e-6f;
+    static constexpr int IDLE_GATE_MIN_BLOCKS = 4;
 
     NamDSP() {
         // Pre-allocate buffers
@@ -366,6 +368,28 @@ public:
             gatedInputBuffer[i] = noiseGate.process(input[i]);
         }
 
+        bool nearSilent = true;
+        for (int i = 0; i < numFrames; i++) {
+            if (std::fabs(gatedInputBuffer[i]) > IDLE_GATE_EPSILON) {
+                nearSilent = false;
+                break;
+            }
+        }
+
+        if (!noiseGate.isOpen && nearSilent) {
+            idleGateSilentBlockCount++;
+        } else {
+            idleGateSilentBlockCount = 0;
+        }
+
+        if (idleGateSilentBlockCount >= IDLE_GATE_MIN_BLOCKS) {
+            for (int i = 0; i < numFrames; i++) {
+                float y = toneStack.process(0.0f);
+                output[i] = std::isfinite(y) ? y : 0.0f;
+            }
+            return;
+        }
+
         // Check if resampling is needed
         double ratio = modelSampleRate / engineSampleRate;
 
@@ -424,6 +448,7 @@ public:
         if (model) {
             model->reset(modelSampleRate, MAX_BLOCK_SIZE * MAX_RESAMPLE_RATIO);
         }
+        idleGateSilentBlockCount = 0;
         noiseGate.reset();
         toneStack.reset();
         updateResamplerRates();
@@ -469,6 +494,7 @@ private:
     std::vector<float> resampleOutBuffer;
     std::vector<float> modelOutputBuffer;
     std::vector<float> gatedInputBuffer;
+    int idleGateSilentBlockCount = 0;
 
     void updateResamplerRates() {
         // srcIn: engine rate -> model rate (upsample if model rate > engine rate)

@@ -19,10 +19,15 @@
 
 #include "matrix.h"
 
-// Check if building as VCV Rack plugin (enables SIMD)
-#if defined(VCVRACK)
-    #include <simd/functions.hpp>
-    #define NAM_USE_SIMD 1
+// Enable Rack SIMD path only when explicitly requested.
+// Current SDK path has no native tanh op, so the fallback can be slower than scalar.
+#if defined(NAM_FORCE_SIMD_ACTIVATIONS) && defined(__has_include)
+    #if __has_include(<simd/functions.hpp>)
+        #include <simd/functions.hpp>
+        #define NAM_USE_SIMD 1
+    #else
+        #define NAM_USE_SIMD 0
+    #endif
 #else
     #define NAM_USE_SIMD 0
 #endif
@@ -245,7 +250,7 @@ public:
         long i = 0;
         for (; i + 3 < size; i += 4) {
             rack::simd::float_4 v = rack::simd::float_4::load(data + i);
-            v = rack::simd::tanh(v);  // Use Rack's SIMD tanh
+            v = fast_tanh_simd(v);
             v.store(data + i);
         }
         // Handle remaining elements
@@ -400,7 +405,7 @@ public:
             rack::simd::float_4 v = rack::simd::float_4::load(data + i);
             // fast_sigmoid(x) = 0.5 * (fast_tanh(x * 0.5) + 1)
             v = v * 0.5f;
-            v = rack::simd::tanh(v);
+            v = fast_tanh_simd(v);
             v = (v + 1.0f) * 0.5f;
             v.store(data + i);
         }

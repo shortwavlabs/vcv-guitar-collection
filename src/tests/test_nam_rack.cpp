@@ -793,6 +793,48 @@ void test_performance(TestContext& ctx) {
                   << " us per operation" << std::endl;
     }
 
+    // Real model block processing benchmark (practical workload)
+    {
+        const std::string modelPath = "res/models/Phillipe P Bug333-Lead-NoDrive-Cab-ESR0,007.nam";
+        auto model = nam::loadModel(modelPath);
+        if (model) {
+            const int blockSize = 128;
+            const int blocks = 2000;
+            std::vector<NAM_SAMPLE> input(blockSize, 0.0f);
+            std::vector<NAM_SAMPLE> output(blockSize, 0.0f);
+
+            model->reset(48000.0, 2048);
+
+            auto startSilent = std::chrono::high_resolution_clock::now();
+            for (int b = 0; b < blocks; b++) {
+                model->process(input.data(), output.data(), blockSize);
+            }
+            auto endSilent = std::chrono::high_resolution_clock::now();
+            auto silentUs = std::chrono::duration_cast<std::chrono::microseconds>(endSilent - startSilent).count();
+
+            // Active input pass
+            model->reset(48000.0, 2048);
+            auto startActive = std::chrono::high_resolution_clock::now();
+            for (int b = 0; b < blocks; b++) {
+                const float phase = static_cast<float>(b * blockSize) / 48000.0f;
+                for (int i = 0; i < blockSize; i++) {
+                    const float t = phase + static_cast<float>(i) / 48000.0f;
+                    input[i] = static_cast<NAM_SAMPLE>(0.4f * std::sin(2.0f * 3.1415926535f * 110.0f * t));
+                }
+                model->process(input.data(), output.data(), blockSize);
+            }
+            auto endActive = std::chrono::high_resolution_clock::now();
+            auto activeUs = std::chrono::duration_cast<std::chrono::microseconds>(endActive - startActive).count();
+
+            std::cout << "  Real model (128f) silent: "
+                      << (silentUs / static_cast<double>(blocks))
+                      << " us per block" << std::endl;
+            std::cout << "  Real model (128f) active: "
+                      << (activeUs / static_cast<double>(blocks))
+                      << " us per block" << std::endl;
+        }
+    }
+
     ctx.assertTrue(true, "Performance test completed");
 }
 
