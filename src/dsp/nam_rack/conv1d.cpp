@@ -1,5 +1,6 @@
 #include "conv1d.h"
 #include <cstring>
+#include <string>
 
 namespace nam {
 
