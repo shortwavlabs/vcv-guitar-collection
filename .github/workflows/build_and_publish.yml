@@ -1,10 +1,7 @@
 name: Build and Test
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -23,6 +20,9 @@ jobs:
           - os: macos-latest
             platform_name: mac-arm64
             sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-mac-arm64.zip
+          - os: macos-15-intel
+            platform_name: mac-x64
+            sdk_url: https://vcvrack.com/downloads/Rack-SDK-latest-mac-x64.zip
 
     defaults:
       run:
