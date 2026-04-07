@@ -1,0 +1,114 @@
+name: Build and Test (Rack Plugin Toolchain)
+
+on:
+  # push:
+  #   branches: [ "main" ]
+  # pull_request:
+  #   branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TOOLCHAIN_REF: v2
+  TOOLCHAIN_DIR: .github/.tmp/rack-plugin-toolchain
+  PLUGIN_SRC_DIR: .github/.tmp/plugin-src
+
+jobs:
+  build:
+    name: Cross-build with rack-plugin-toolchain
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Clone rack-plugin-toolchain
+        id: toolchain-meta
+        run: |
+          git clone --branch "${TOOLCHAIN_REF}" --depth 1 https://github.com/VCVRack/rack-plugin-toolchain.git "${TOOLCHAIN_DIR}"
+          printf 'sha=%s\n' "$(git -C "${TOOLCHAIN_DIR}" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore rack-plugin-toolchain cache
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.TOOLCHAIN_DIR }}/.build
+            ${{ env.TOOLCHAIN_DIR }}/local
+            ${{ env.TOOLCHAIN_DIR }}/osxcross
+            ${{ env.TOOLCHAIN_DIR }}/Rack-SDK-mac-x64
+            ${{ env.TOOLCHAIN_DIR }}/Rack-SDK-mac-arm64
+            ${{ env.TOOLCHAIN_DIR }}/Rack-SDK-win-x64
+            ${{ env.TOOLCHAIN_DIR }}/Rack-SDK-lin-x64
+          key: ${{ runner.os }}-rack-plugin-toolchain-${{ steps.toolchain-meta.outputs.sha }}-v1
+
+      - name: Install Linux test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev libjack-jackd2-dev libpulse-dev
+
+      - name: Install rack-plugin-toolchain build dependencies
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          cd "${TOOLCHAIN_DIR}"
+          make dep-ubuntu
+
+      - name: Download macOS SDK 12.3 package
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        env:
+          RACK_MACOS_SDK_URL: ${{ secrets.RACK_MACOS_SDK_URL }}
+        run: |
+          if [ -z "${RACK_MACOS_SDK_URL}" ]; then
+            echo "Repository secret RACK_MACOS_SDK_URL must point to MacOSX12.3.sdk.tar.xz."
+            exit 1
+          fi
+          curl -fL --retry 3 --retry-delay 5 "${RACK_MACOS_SDK_URL}" -o "${TOOLCHAIN_DIR}/MacOSX12.3.sdk.tar.xz"
+
+      - name: Build rack-plugin-toolchain
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          cd "${TOOLCHAIN_DIR}"
+          JOBS="$(nproc)" make toolchain-all
+
+      - name: Ensure Rack SDKs are present
+        run: |
+          cd "${TOOLCHAIN_DIR}"
+          make rack-sdk-all
+
+      - name: Stage plugin source
+        run: |
+          rm -rf "${PLUGIN_SRC_DIR}"
+          mkdir -p "${PLUGIN_SRC_DIR}"
+          rsync -a --delete --exclude '.git/' "${GITHUB_WORKSPACE}/" "${PLUGIN_SRC_DIR}/"
+
+      - name: Run Linux tests with toolchain SDK
+        run: |
+          cd "${PLUGIN_SRC_DIR}"
+          rm -rf dep/Rack-SDK
+          mkdir -p dep
+          ln -s "${TOOLCHAIN_DIR}/Rack-SDK-lin-x64" dep/Rack-SDK
+          chmod +x ./run_tests.sh
+          ./run_tests.sh
+
+      - name: Build plugin packages
+        run: |
+          cd "${TOOLCHAIN_DIR}"
+          make -j"$(nproc)" plugin-build PLUGIN_DIR="${PLUGIN_SRC_DIR}"
+
+      - name: List built packages
+        run: |
+          ls -lh "${TOOLCHAIN_DIR}/plugin-build"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: guitar-collection-plugin-toolchain
+          path: ${{ env.TOOLCHAIN_DIR }}/plugin-build/*.vcvplugin
+          if-no-files-found: error
