@@ -1,4 +1,5 @@
 #include "Overdrive.hpp"
+#include "clamp_compat.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -65,9 +66,9 @@ void Overdrive::process(const ProcessArgs& args) {
 
     int attack = static_cast<int>(std::round(params[ATTACK_PARAM].getValue()));
     if (inputs[ATTACK_CV].isConnected()) {
-        float cv = std::clamp(inputs[ATTACK_CV].getVoltage(), 0.f, 10.f);
+        float cv = swv::compat::clamp(inputs[ATTACK_CV].getVoltage(), 0.f, 10.f);
         int cvPos = static_cast<int>(std::round(rescale(cv, 0.f, 10.f, 0.f, 5.f)));
-        attack = std::clamp(attack + cvPos, 0, 5);
+        attack = swv::compat::clamp(attack + cvPos, 0, 5);
     }
     if (attack != cachedAttack) {
         dsp.setAttack(attack);

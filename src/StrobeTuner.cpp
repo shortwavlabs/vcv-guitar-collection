@@ -44,9 +44,9 @@ void StrobeTuner::process(const ProcessArgs& args) {
 
     float a4Hz = params[A4_REF_PARAM].getValue();
     if (inputs[A4_CV_INPUT].isConnected()) {
-        a4Hz += std::clamp(inputs[A4_CV_INPUT].getVoltage(), -5.f, 5.f);
+        a4Hz += swv::compat::clamp(inputs[A4_CV_INPUT].getVoltage(), -5.f, 5.f);
     }
-    a4Hz = std::clamp(a4Hz, 430.f, 450.f);
+    a4Hz = swv::compat::clamp(a4Hz, 430.f, 450.f);
 
     const float smoothingParam = params[SMOOTHING_PARAM].getValue();
     const float smoothingCoeff = rescale(smoothingParam, 0.f, 1.f, 0.55f, 0.96f);
@@ -80,7 +80,7 @@ void StrobeTuner::process(const ProcessArgs& args) {
             midiNote = static_cast<int>(std::round(midiFloat));
             const float targetHz = StrobeTunerDSP::midiToFrequency(midiNote, a4Hz);
             centsError = StrobeTunerDSP::centsDifference(estimatedHz, targetHz);
-            centsError = std::clamp(centsError, -50.f, 50.f);
+            centsError = swv::compat::clamp(centsError, -50.f, 50.f);
 
             lastDeltaHz = estimatedHz - targetHz;
             confidence = analysisResult.confidence;
@@ -108,7 +108,7 @@ void StrobeTuner::process(const ProcessArgs& args) {
 
     if (pitchValid) {
         outputs[NOTE_OUTPUT].setVoltage(StrobeTunerDSP::midiToRackPitchVoltage(midiNote));
-        outputs[ERROR_OUTPUT].setVoltage(std::clamp(centsError / 10.f, -5.f, 5.f));
+        outputs[ERROR_OUTPUT].setVoltage(swv::compat::clamp(centsError / 10.f, -5.f, 5.f));
     } else {
         outputs[NOTE_OUTPUT].setVoltage(0.f);
         outputs[ERROR_OUTPUT].setVoltage(0.f);
@@ -124,7 +124,7 @@ void StrobeTuner::process(const ProcessArgs& args) {
         ? std::min(1.f, absCents / 8.f)
         : 0.f;
     const float tuneBrightness = inTune ? 1.f : 0.f;
-    const float signalBrightness = pitchValid ? std::clamp(confidence, 0.f, 1.f) : 0.f;
+    const float signalBrightness = pitchValid ? swv::compat::clamp(confidence, 0.f, 1.f) : 0.f;
 
     lights[FLAT_LIGHT].setBrightnessSmooth(flatBrightness, args.sampleTime * 20.f);
     lights[IN_TUNE_LIGHT].setBrightnessSmooth(tuneBrightness, args.sampleTime * 20.f);
@@ -273,7 +273,7 @@ void StrobeTunerDisplay::drawStripes(const DrawArgs& args) {
     const bool valid = module->uiPitchValid.load(std::memory_order_relaxed);
     const float phaseCycles = module->uiPhaseCycles.load(std::memory_order_relaxed);
     const float cents = module->uiCents.load(std::memory_order_relaxed);
-    const float confidence = std::clamp(module->uiConfidence.load(std::memory_order_relaxed), 0.f, 1.f);
+    const float confidence = swv::compat::clamp(module->uiConfidence.load(std::memory_order_relaxed), 0.f, 1.f);
 
     const float w = box.size.x;
     const float h = box.size.y;
@@ -319,7 +319,7 @@ void StrobeTunerDisplay::drawStripes(const DrawArgs& args) {
             const float barAlpha = baseAlpha * (0.55f + 0.45f * std::sin(spinAngle * 1.8f + i * 0.32f + b * 0.41f));
             nvgBeginPath(args.vg);
             nvgRect(args.vg, barX, -padHeight * 0.42f, 1.0f, padHeight * 0.84f);
-            nvgFillColor(args.vg, nvgRGBA(baseR, baseG, baseB, static_cast<unsigned char>(std::clamp(barAlpha, 0.f, 255.f))));
+            nvgFillColor(args.vg, nvgRGBA(baseR, baseG, baseB, static_cast<unsigned char>(swv::compat::clamp(barAlpha, 0.f, 255.f))));
             nvgFill(args.vg);
         }
 
@@ -405,7 +405,7 @@ void StrobeTunerDisplay::drawReadout(const DrawArgs& args) {
     nvgStrokeWidth(args.vg, 0.9f);
     nvgStroke(args.vg);
 
-    int bars = static_cast<int>(std::round(std::clamp(confidence, 0.f, 1.f) * 4.f));
+    int bars = static_cast<int>(std::round(swv::compat::clamp(confidence, 0.f, 1.f) * 4.f));
     for (int i = 0; i < 4; ++i) {
         const float bx = meterX + 2.f + i * 5.f;
         nvgBeginPath(args.vg);

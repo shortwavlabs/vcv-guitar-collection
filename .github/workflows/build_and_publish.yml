@@ -1,14 +1,11 @@
 name: Build and Test
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build on ${{ matrix.platform_name }}
+    name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -81,7 +78,8 @@ jobs:
           echo "Downloading SDK from ${{ matrix.sdk_url }}"
           curl -L -o Rack-SDK.zip "${{ matrix.sdk_url }}"
           unzip -q Rack-SDK.zip
-          # SDK unzips to a folder like "Rack-SDK". Move it to dep/Rack-SDK where tests expect it
+          mkdir -p dep
+          # SDK unzips to a folder like "Rack-SDK". Move it to dep/Rack-SDK where tests/build expect it.
           if [ -d "Rack-SDK" ]; then
             mv "Rack-SDK" dep/Rack-SDK
           else
@@ -90,34 +88,27 @@ jobs:
             mv "$SDK_DIR" dep/Rack-SDK
           fi
           echo "RACK_DIR=$(pwd)/dep/Rack-SDK" >> $GITHUB_ENV
-          
-      # ------------------------------------------------------------------------
-      # Download Rack Runtime (Windows only - for tests)
-      # ------------------------------------------------------------------------
-      - name: Download Rack Runtime (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          echo "Downloading VCV Rack installer for Windows to get runtime DLL..."
-          curl -L -o RackFree.exe "https://vcvrack.com/downloads/RackFree-latest-win-x64.exe"
-          # Use 7zip to extract the installer
-          7z x RackFree.exe -o"RackExtracted" -y
-          # Copy runtime DLLs to SDK location for tests
-          cp RackExtracted/libRack.dll dep/Rack-SDK/ || echo "Failed to copy libRack.dll"
-          cp RackExtracted/libgcc_s_seh-1.dll dep/Rack-SDK/ || echo "Failed to copy libgcc_s_seh-1.dll"
-          cp RackExtracted/libstdc++-6.dll dep/Rack-SDK/ || echo "Failed to copy libstdc++-6.dll"
-          cp RackExtracted/libwinpthread-1.dll dep/Rack-SDK/ || echo "Failed to copy libwinpthread-1.dll"
-          echo "DLLs copied to SDK:"
-          ls -la dep/Rack-SDK/*.dll
 
       # ------------------------------------------------------------------------
-      # Run Tests
+      # Run Tests (Linux/Mac)
       # ------------------------------------------------------------------------
-      - name: Run Tests (with coverage reporting)
+      - name: Run Tests (Linux/Mac)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
-          chmod +x ./run_tests_with_coverage.sh
-          ./run_tests_with_coverage.sh
+          chmod +x ./run_tests.sh
+          ./run_tests.sh
+
+      # ------------------------------------------------------------------------
+      # Run Tests (Windows)
+      # ------------------------------------------------------------------------
+      - name: Run Tests (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          export RACK_DIR="$(pwd)/dep/Rack-SDK"
+          chmod +x ./run_tests.sh
+          ./run_tests.sh
 
       # ------------------------------------------------------------------------
       # Build Plugin (Linux/Mac)
@@ -135,15 +126,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          # Set RACK_DIR using MSYS2 path format
-          export RACK_DIR="$(cygpath -u "$GITHUB_WORKSPACE")/dep/Rack-SDK"
-          echo "RACK_DIR=$RACK_DIR"
-          # Check what SDK thinks the OS is
-          echo "Checking arch detection..."
-          uname -s
+          # Re-export RACK_DIR inside MSYS2.
+          export RACK_DIR="$(pwd)/dep/Rack-SDK"
           make dep
-          # Force Windows architecture detection by overriding RACK_OS
-          make dist RACK_OS=win
+          make dist
 
       # ------------------------------------------------------------------------
       # Upload Artifacts

@@ -32,6 +32,28 @@ Guitar Tools uses real-time neural network inference and convolution, which can 
 - EQ processing: <1% per voice
 - Noise gate: <0.5% per voice
 
+#### Eco Mode (Off/On)
+
+NAM Player includes a context-menu **Eco Mode** toggle with two states:
+
+- **Off**: Full processing quality (default)
+- **On**: Reduced CPU usage for real-time performance
+
+**Enable it:** Right-click **NAM Player** → **Eco Mode** → **On**
+
+Use Eco Mode On when your patch is close to CPU limits, especially with multiple NAM instances or higher sample rates.
+
+#### Use Fast Tanh (On/Off)
+
+NAM Player also provides a context-menu **Use Fast Tanh** toggle:
+
+- **On (default):** Fast tanh approximation in activation paths for lower CPU.
+- **Off:** Exact `std::tanh` path for strict numerical behavior.
+
+**Enable it:** Right-click **NAM Player** → **Use Fast Tanh**
+
+For most models, leave this **On**. If you suspect a specific model is unusually sensitive, switch it **Off** for that patch and compare by ear.
+
 **Cabinet Simulator:**
 - FFT convolution: 1-2% per voice
 - Filter processing: <0.5% per voice
@@ -50,7 +72,7 @@ Guitar Tools uses real-time neural network inference and convolution, which can 
 **For Live Performance:**
 - Use simpler models (Linear, small LSTM)
 - Minimize polyphony
-- Disable unused EQ bands
+- Enable **Eco Mode: On** on NAM Player instances when CPU headroom is tight
 - Monitor CPU meter
 
 **For Studio Recording:**

@@ -5,6 +5,8 @@
 #include <limits>
 #include <vector>
 
+#include "../clamp_compat.hpp"
+
 /**
  * StrobeTunerDSP
  *
@@ -42,13 +44,13 @@ public:
     }
 
     void setFrequencyRange(float minHz, float maxHz) {
-        minFrequencyHz = std::clamp(minHz, 20.f, 2000.f);
-        maxFrequencyHz = std::clamp(maxHz, minFrequencyHz + 10.f, 5000.f);
+        minFrequencyHz = swv::compat::clamp(minHz, 20.f, 2000.f);
+        maxFrequencyHz = swv::compat::clamp(maxHz, minFrequencyHz + 10.f, 5000.f);
         updateLagRange();
     }
 
     void setConfidenceThreshold(float threshold) {
-        confidenceThreshold = std::clamp(threshold, 0.1f, 0.99f);
+        confidenceThreshold = swv::compat::clamp(threshold, 0.1f, 0.99f);
     }
 
     float getConfidenceThreshold() const {
@@ -56,7 +58,7 @@ public:
     }
 
     void setMinRms(float value) {
-        minRms = std::clamp(value, 1.0e-5f, 1.0f);
+        minRms = swv::compat::clamp(value, 1.0e-5f, 1.0f);
     }
 
     float getMinRms() const {
@@ -64,7 +66,7 @@ public:
     }
 
     void setSmoothing(float coefficient) {
-        smoothingCoefficient = std::clamp(coefficient, 0.f, 0.995f);
+        smoothingCoefficient = swv::compat::clamp(coefficient, 0.f, 0.995f);
     }
 
     float getSmoothing() const {
@@ -159,9 +161,11 @@ public:
 
 private:
     static constexpr float DC_BLOCK_COEFFICIENT = 0.995f;
-    static constexpr int MIN_ANALYSIS_WINDOW = 1024;
-    static constexpr int MAX_ANALYSIS_WINDOW = 4096;
-    static constexpr int MIN_RING_BUFFER_SIZE = 8192;
+    enum {
+        MIN_ANALYSIS_WINDOW = 1024,
+        MAX_ANALYSIS_WINDOW = 4096,
+        MIN_RING_BUFFER_SIZE = 8192
+    };
 
     double sampleRate = 48000.0;
     float minFrequencyHz = DEFAULT_MIN_FREQUENCY;
@@ -192,10 +196,13 @@ private:
 
     void configureAnalysisSizes() {
         analysisWindowSize = static_cast<int>(std::round(sampleRate * 0.03));
-        analysisWindowSize = std::clamp(analysisWindowSize, MIN_ANALYSIS_WINDOW, MAX_ANALYSIS_WINDOW);
+        analysisWindowSize = swv::compat::clamp(
+            analysisWindowSize,
+            static_cast<int>(MIN_ANALYSIS_WINDOW),
+            static_cast<int>(MAX_ANALYSIS_WINDOW));
         hopSize = std::max(64, analysisWindowSize / 6);
 
-        const int requiredRingSize = std::max(MIN_RING_BUFFER_SIZE, analysisWindowSize * 2);
+        const int requiredRingSize = std::max(static_cast<int>(MIN_RING_BUFFER_SIZE), analysisWindowSize * 2);
         ringBuffer.assign(requiredRingSize, 0.f);
         windowBuffer.assign(analysisWindowSize, 0.f);
         correlationScores.assign(analysisWindowSize, 0.f);
@@ -282,7 +289,7 @@ private:
             }
         }
 
-        result.confidence = std::clamp(bestScore, 0.f, 1.f);
+        result.confidence = swv::compat::clamp(bestScore, 0.f, 1.f);
         if (bestScore < confidenceThreshold) {
             result.valid = false;
             result.smoothedFrequencyHz = hasSmoothedFrequency ? smoothedFrequencyHz : 0.f;
@@ -299,12 +306,12 @@ private:
             const float denominator = yPrev - 2.f * yCurr + yNext;
             if (std::fabs(denominator) > 1.0e-6f) {
                 float delta = 0.5f * (yPrev - yNext) / denominator;
-                delta = std::clamp(delta, -1.f, 1.f);
+                delta = swv::compat::clamp(delta, -1.f, 1.f);
                 refinedLag += delta;
             }
         }
 
-        refinedLag = std::clamp(refinedLag, static_cast<float>(minLag), static_cast<float>(maxLag));
+        refinedLag = swv::compat::clamp(refinedLag, static_cast<float>(minLag), static_cast<float>(maxLag));
         float frequencyHz = static_cast<float>(sampleRate / refinedLag);
         frequencyHz = resolveOctaveContinuity(frequencyHz);
 

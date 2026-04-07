@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.2] - 2026-04-07
+
+### Fixed
+- Fixed the macOS Intel (`x64`) plugin build failure in the NAM DSP engine by adding the missing standard library header required for `std::to_string` in `conv1d.cpp`.
+
+---
+
 ## [2.0.0] - 2026-01-19
 
 🎉 **Initial Release**
@@ -84,7 +91,7 @@ Guitar Tools brings professional guitar amp modeling and cabinet simulation to V
 ### 🛠️ Technical Features
 
 **Audio Processing:**
-- Integration with NeuralAmpModelerCore library
+- In-tree NAM inference engine (`src/dsp/nam_rack`)
 - Multi-threaded model and IR loading
 - Block processing (128 samples) for efficiency
 - SIMD-optimized DSP algorithms
@@ -211,5 +218,6 @@ Third-party components:
 
 ---
 
-[unreleased]: https://github.com/shortwavlabs/swv-guitar-collection/compare/v2.0.0...HEAD
+[unreleased]: https://github.com/shortwavlabs/swv-guitar-collection/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/shortwavlabs/swv-guitar-collection/compare/v2.0.0...v2.0.2
 [2.0.0]: https://github.com/shortwavlabs/swv-guitar-collection/releases/tag/v2.0.0
