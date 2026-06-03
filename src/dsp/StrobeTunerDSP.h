@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <vector>
 
 #include "../clamp_compat.hpp"
@@ -66,6 +65,7 @@ public:
     }
 
     void setSmoothing(float coefficient) {
+        // Exponential moving average coefficient for accepted pitch estimates.
         smoothingCoefficient = swv::compat::clamp(coefficient, 0.f, 0.995f);
     }
 
@@ -289,8 +289,11 @@ private:
             }
         }
 
-        result.confidence = swv::compat::clamp(bestScore, 0.f, 1.f);
-        if (bestScore < confidenceThreshold) {
+        bestLag = chooseFundamentalLag(bestLag, bestScore);
+        const float selectedScore = correlationScores[bestLag];
+
+        result.confidence = swv::compat::clamp(selectedScore, 0.f, 1.f);
+        if (selectedScore < confidenceThreshold) {
             result.valid = false;
             result.smoothedFrequencyHz = hasSmoothedFrequency ? smoothedFrequencyHz : 0.f;
             result.frequencyHz = 0.f;
@@ -313,7 +316,6 @@ private:
 
         refinedLag = swv::compat::clamp(refinedLag, static_cast<float>(minLag), static_cast<float>(maxLag));
         float frequencyHz = static_cast<float>(sampleRate / refinedLag);
-        frequencyHz = resolveOctaveContinuity(frequencyHz);
 
         result.valid = true;
         result.frequencyHz = frequencyHz;
@@ -329,27 +331,26 @@ private:
         lastResult = result;
     }
 
-    float resolveOctaveContinuity(float frequencyHz) const {
-        if (!hasSmoothedFrequency || smoothedFrequencyHz <= 0.f) {
-            return frequencyHz;
+    int chooseFundamentalLag(int bestLag, float bestScore) const {
+        if (bestScore < confidenceThreshold || bestLag <= minLag) {
+            return bestLag;
         }
 
-        float candidates[3] = {frequencyHz * 0.5f, frequencyHz, frequencyHz * 2.f};
-        float bestCandidate = frequencyHz;
-        float bestDistance = std::numeric_limits<float>::max();
-
-        for (float candidate : candidates) {
-            if (candidate < minFrequencyHz || candidate > maxFrequencyHz) {
+        // Normalized autocorrelation gives equally strong peaks at repeated
+        // periods. Prefer the earliest strong local maximum so 2T/3T peaks do
+        // not collapse the estimate to a subharmonic.
+        const float strongPeakThreshold = std::max(confidenceThreshold, bestScore * 0.96f);
+        for (int lag = minLag + 1; lag < maxLag; ++lag) {
+            const float score = correlationScores[lag];
+            if (score < strongPeakThreshold) {
                 continue;
             }
-            const float ratio = candidate / smoothedFrequencyHz;
-            const float distance = std::fabs(std::log2(std::max(ratio, 1.0e-6f)));
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                bestCandidate = candidate;
+
+            if (score >= correlationScores[lag - 1] && score >= correlationScores[lag + 1]) {
+                return lag;
             }
         }
 
-        return bestCandidate;
+        return bestLag;
     }
 };

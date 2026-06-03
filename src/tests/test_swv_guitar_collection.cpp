@@ -1436,6 +1436,54 @@ namespace TestSuite
     T_ASSERT_NEAR(ctx, result.smoothedFrequencyHz, kA2, 1.8f);
   }
 
+  void test_strobe_tuner_rejects_subharmonic_locks(TestContext &ctx)
+  {
+    std::printf("Testing StrobeTunerDSP subharmonic rejection...\n");
+
+    const float testFrequencies[] = {
+      392.0f,    // G4 previously tended to collapse to 196 Hz.
+      523.251f,  // C5 previously tended to collapse to 261 Hz.
+      659.255f,  // E5 previously tended to collapse near 264 Hz.
+      880.0f     // A5 previously tended to collapse to unrelated lower peaks.
+    };
+
+    for (float frequencyHz : testFrequencies)
+    {
+      StrobeTunerDSP detector;
+      detector.setSampleRate(48000.0);
+      detector.setSmoothing(0.86f);
+      detector.setConfidenceThreshold(0.55f);
+      detector.reset();
+
+      StrobeTunerDSP::PitchResult result;
+      bool sawValid = strobe_run_detector_for_tone(detector, frequencyHz, 48000.f, 1.5f, 0.55f, 0.f, result);
+      T_ASSERT(ctx, sawValid);
+      T_ASSERT_NEAR(ctx, result.frequencyHz, frequencyHz, 2.0f);
+      T_ASSERT_NEAR(ctx, result.smoothedFrequencyHz, frequencyHz, 2.0f);
+    }
+  }
+
+  void test_strobe_tuner_tracks_octave_change(TestContext &ctx)
+  {
+    std::printf("Testing StrobeTunerDSP octave-change tracking...\n");
+
+    StrobeTunerDSP detector;
+    detector.setSampleRate(48000.0);
+    detector.setSmoothing(0.86f);
+    detector.setConfidenceThreshold(0.55f);
+    detector.reset();
+
+    StrobeTunerDSP::PitchResult result;
+    bool sawValid = strobe_run_detector_for_tone(detector, 220.f, 48000.f, 0.8f, 0.55f, 0.f, result);
+    T_ASSERT(ctx, sawValid);
+    T_ASSERT_NEAR(ctx, result.smoothedFrequencyHz, 220.f, 1.0f);
+
+    sawValid = strobe_run_detector_for_tone(detector, 440.f, 48000.f, 1.0f, 0.55f, 0.f, result);
+    T_ASSERT(ctx, sawValid);
+    T_ASSERT_NEAR(ctx, result.frequencyHz, 440.f, 1.0f);
+    T_ASSERT_NEAR(ctx, result.smoothedFrequencyHz, 440.f, 1.0f);
+  }
+
   //------------------------------------------------------------------------------
   // Test Runner
   //------------------------------------------------------------------------------
@@ -1513,6 +1561,8 @@ namespace TestSuite
     test_strobe_tuner_detect_a4(ctx);
     test_strobe_tuner_detect_low_e(ctx);
     test_strobe_tuner_detect_with_noise(ctx);
+    test_strobe_tuner_rejects_subharmonic_locks(ctx);
+    test_strobe_tuner_tracks_octave_change(ctx);
 
     std::printf("\n");
     ctx.summary();
