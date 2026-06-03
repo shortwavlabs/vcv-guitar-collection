@@ -6,6 +6,8 @@
 **Status:** Planning Phase  
 **Date:** February 2026
 
+> Correction note: The third model is the Boss SD-1 Super OverDrive, not the Boss DS-1 Distortion. Older DS-1-specific sections in this draft are historical/stale and should not be used as implementation guidance.
+
 ---
 
 ## Table of Contents
@@ -33,7 +35,7 @@
 Implement a faithful digital recreation of three classic overdrive pedals:
 - **Ibanez Tubescreamer TS-808** (1979-1980)
 - **Ibanez Tubescreamer TS-9** (1981-present)
-- **Boss DS-1 Distortion** (1978-present)
+- **Boss SD-1 Super OverDrive** (1981-present)
 
 ### Key Features
 

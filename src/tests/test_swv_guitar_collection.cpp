@@ -17,7 +17,6 @@
 #include "../dsp/Oversampler.h"
 #include "../dsp/SingleKnobNoiseGate.h"
 #include "../dsp/SoftClipper.h"
-#include "../dsp/HardClipper.h"
 #include "../dsp/ToneStack.h"
 #include "../dsp/TransistorStage.h"
 #include "../dsp/OverdriveDSP.h"
@@ -1219,16 +1218,78 @@ namespace TestSuite
     T_ASSERT(ctx, !std::isnan(out) && !std::isinf(out));
   }
 
-  void test_hard_clipper_limits(TestContext &ctx)
+  void test_tube_screamer_schematic_filter_frequencies(TestContext &ctx)
   {
-    std::printf("Testing HardClipper limits...\n");
+    std::printf("Testing Tube Screamer schematic filter frequencies...\n");
 
-    HardClipper clipper;
-    clipper.setSampleRate(48000.0);
+    SoftClipper clipper;
+    clipper.setModel(OverdriveModel::TS808);
+    clipper.setDrive(0.0f);
+    T_ASSERT_NEAR(ctx, clipper.getClippingLowpassFrequency(), 61206.f, 250.f);
+
     clipper.setDrive(1.0f);
+    T_ASSERT_NEAR(ctx, clipper.getClippingLowpassFrequency(), 5662.f, 50.f);
 
-    float out = clipper.process(10.0f);
-    T_ASSERT(ctx, std::abs(out) <= 1.0f);
+    clipper.setModel(OverdriveModel::TS9);
+    T_ASSERT_NEAR(ctx, clipper.getClippingLowpassFrequency(), 5662.f, 50.f);
+
+    T_ASSERT_NEAR(ctx, TubeScreamerTone::getPreToneLowpassFrequency(), 723.f, 5.f);
+    T_ASSERT_NEAR(ctx, TubeScreamerTone::getToneHighpassFrequency(), 3288.f, 25.f);
+  }
+
+  float tone_sine_rms(float tone, float frequency)
+  {
+    TubeScreamerTone toneStack;
+    toneStack.setSampleRate(48000.0);
+    toneStack.setTone(tone);
+
+    float sum = 0.f;
+    int count = 0;
+    for (int i = 0; i < 4096; ++i) {
+      float input = std::sin(2.f * static_cast<float>(M_PI) * frequency * static_cast<float>(i) / 48000.f);
+      float output = toneStack.process(input);
+      if (i > 512) {
+        sum += output * output;
+        ++count;
+      }
+    }
+    return std::sqrt(sum / static_cast<float>(count));
+  }
+
+  void test_tube_screamer_tone_adds_treble_without_dropping_body(TestContext &ctx)
+  {
+    std::printf("Testing Tube Screamer tone response...\n");
+
+    float darkHigh = tone_sine_rms(0.0f, 4000.f);
+    float brightHigh = tone_sine_rms(1.0f, 4000.f);
+    T_ASSERT(ctx, brightHigh > darkHigh * 1.5f);
+
+    float darkLow = tone_sine_rms(0.0f, 110.f);
+    float brightLow = tone_sine_rms(1.0f, 110.f);
+    T_ASSERT(ctx, brightLow > darkLow * 0.8f);
+  }
+
+  float soft_clipper_single_sample(OverdriveModel model, float input)
+  {
+    SoftClipper clipper;
+    clipper.setSampleRate(48000.0);
+    clipper.setDrive(0.8f);
+    clipper.setAttackPosition(3);
+    clipper.setModel(model);
+    return clipper.process(input);
+  }
+
+  void test_sd1_soft_clipper_is_asymmetric(TestContext &ctx)
+  {
+    std::printf("Testing SD-1 asymmetric soft clipping...\n");
+
+    float tsPositive = soft_clipper_single_sample(OverdriveModel::TS808, 1.0f);
+    float tsNegative = soft_clipper_single_sample(OverdriveModel::TS808, -1.0f);
+    float sdPositive = soft_clipper_single_sample(OverdriveModel::SD1, 1.0f);
+    float sdNegative = soft_clipper_single_sample(OverdriveModel::SD1, -1.0f);
+
+    T_ASSERT_NEAR(ctx, std::abs(tsPositive), std::abs(tsNegative), 5e-2f);
+    T_ASSERT(ctx, std::abs(std::abs(sdPositive) - std::abs(sdNegative)) > 5e-2f);
   }
 
   void test_tone_stack_extremes(TestContext &ctx)
@@ -1243,13 +1304,6 @@ namespace TestSuite
     float high = tsTone.process(0.5f);
     T_ASSERT(ctx, !std::isnan(low) && !std::isnan(high));
 
-    DS1Tone dsTone;
-    dsTone.setSampleRate(48000.0);
-    dsTone.setTone(0.0f);
-    float dsLow = dsTone.process(0.5f);
-    dsTone.setTone(1.0f);
-    float dsHigh = dsTone.process(0.5f);
-    T_ASSERT(ctx, !std::isnan(dsLow) && !std::isnan(dsHigh));
   }
 
   void test_transistor_stages(TestContext &ctx)
@@ -1288,6 +1342,57 @@ namespace TestSuite
     }
 
     T_ASSERT(ctx, dsp.isGateOpen());
+  }
+
+  float overdrive_attack_delta(OverdriveModel model, int lowAttack, int highAttack)
+  {
+    OverdriveDSP low;
+    OverdriveDSP high;
+    low.setSampleRate(48000.0);
+    high.setSampleRate(48000.0);
+    low.setModel(model);
+    high.setModel(model);
+    low.setDrive(0.7f);
+    high.setDrive(0.7f);
+    low.setTone(0.5f);
+    high.setTone(0.5f);
+    low.setLevel(1.0f);
+    high.setLevel(1.0f);
+    low.setGate(1.0f);
+    high.setGate(1.0f);
+    low.setAttack(lowAttack);
+    high.setAttack(highAttack);
+
+    float maxDiff = 0.f;
+    for (int i = 0; i < 4096; ++i) {
+      float t = static_cast<float>(i) / 48000.f;
+      float input = 0.34f * std::sin(2.f * static_cast<float>(M_PI) * 110.f * t)
+          + 0.12f * std::sin(2.f * static_cast<float>(M_PI) * 880.f * t);
+      float outLow = low.process(input);
+      float outHigh = high.process(input);
+      if (i > 512) {
+        maxDiff = std::max(maxDiff, std::abs(outLow - outHigh));
+      }
+    }
+    return maxDiff;
+  }
+
+  void test_overdrive_dsp_attack_affects_all_models(TestContext &ctx)
+  {
+    std::printf("Testing OverdriveDSP attack response across models...\n");
+
+    T_ASSERT(ctx, overdrive_attack_delta(OverdriveModel::TS808, 0, 5) > 1e-4f);
+    T_ASSERT(ctx, overdrive_attack_delta(OverdriveModel::TS9, 0, 5) > 1e-4f);
+    T_ASSERT(ctx, overdrive_attack_delta(OverdriveModel::SD1, 0, 5) > 1e-4f);
+  }
+
+  void test_overdrive_dsp_sd1_model_selects_third_position(TestContext &ctx)
+  {
+    std::printf("Testing OverdriveDSP SD-1 model selection...\n");
+
+    OverdriveDSP dsp;
+    dsp.setModel(static_cast<OverdriveModel>(2));
+    T_ASSERT(ctx, dsp.getModel() == OverdriveModel::SD1);
   }
 
   //------------------------------------------------------------------------------
@@ -1549,10 +1654,14 @@ namespace TestSuite
     test_oversampler_basic(ctx);
     test_single_knob_noise_gate(ctx);
     test_soft_clipper_behavior(ctx);
-    test_hard_clipper_limits(ctx);
+    test_tube_screamer_schematic_filter_frequencies(ctx);
+    test_tube_screamer_tone_adds_treble_without_dropping_body(ctx);
+    test_sd1_soft_clipper_is_asymmetric(ctx);
     test_tone_stack_extremes(ctx);
     test_transistor_stages(ctx);
     test_overdrive_dsp_basic(ctx);
+    test_overdrive_dsp_attack_affects_all_models(ctx);
+    test_overdrive_dsp_sd1_model_selects_third_position(ctx);
 
     // Strobe tuner DSP tests
     test_strobe_tuner_initialization(ctx);

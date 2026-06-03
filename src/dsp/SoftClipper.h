@@ -10,11 +10,11 @@
 enum class OverdriveModel {
     TS808 = 0,
     TS9 = 1,
-    DS1 = 2
+    SD1 = 2
 };
 
 /**
- * SoftClipper - Tubescreamer-style soft clipping stage
+ * SoftClipper - overdrive-style soft clipping stage
  */
 class SoftClipper {
 public:
@@ -42,19 +42,23 @@ public:
     }
 
     float process(float input) {
+        float fixedFeedback = model == OverdriveModel::SD1 ? SD1_FEEDBACK_R : TS_FEEDBACK_R;
+        float drivePot = model == OverdriveModel::SD1 ? SD1_DRIVE_POT_R : TS_DRIVE_POT_R;
+        float feedbackR = fixedFeedback + drive * drivePot;
+
         float attackCap = ATTACK_CAPS[attackPosition];
-        float hpFc = 1.f / (2.f * static_cast<float>(M_PI) * R4 * attackCap);
+        float hpFc = 1.f / (2.f * static_cast<float>(M_PI) * FEEDBACK_GROUND_R * attackCap);
         float hpCoeff = std::exp(-2.f * static_cast<float>(M_PI) * hpFc / static_cast<float>(sampleRate));
         float hpOut = hpCoeff * (hpState + input - hpPrevInput);
         hpState = hpOut;
         hpPrevInput = input;
 
-        float gain = 1.f + (R6 + drive * 500000.f) / R4;
+        float gain = 1.f + feedbackR / FEEDBACK_GROUND_R;
         float boosted = hpOut * gain;
 
         float clipped = softClipDiode(boosted);
 
-        float lpFc = 7000.f;
+        float lpFc = model == OverdriveModel::SD1 ? SD1_POST_CLIP_LP_FC : feedbackLowpassFc(feedbackR, TS_FEEDBACK_CAP);
         float lpCoeff = std::exp(-2.f * static_cast<float>(M_PI) * lpFc / static_cast<float>(sampleRate));
         lpState = (1.f - lpCoeff) * clipped + lpCoeff * lpState;
 
@@ -71,16 +75,32 @@ public:
         return outputGain;
     }
 
+    float getClippingLowpassFrequency() const {
+        if (model == OverdriveModel::SD1) {
+            return SD1_POST_CLIP_LP_FC;
+        }
+        float fixedFeedback = model == OverdriveModel::SD1 ? SD1_FEEDBACK_R : TS_FEEDBACK_R;
+        float drivePot = model == OverdriveModel::SD1 ? SD1_DRIVE_POT_R : TS_DRIVE_POT_R;
+        return feedbackLowpassFc(fixedFeedback + drive * drivePot, TS_FEEDBACK_CAP);
+    }
+
 private:
     double sampleRate = 48000.0;
     float drive = 0.5f;
     int attackPosition = 3;
     OverdriveModel model = OverdriveModel::TS808;
 
-    // Tubescreamer component values
-    static constexpr float R4 = 4700.0f;
-    static constexpr float R6 = 51000.0f;
+    // Overdrive clipping-stage component values
+    static constexpr float FEEDBACK_GROUND_R = 4700.0f;
+    static constexpr float TS_FEEDBACK_R = 51000.0f;
+    static constexpr float TS_DRIVE_POT_R = 500000.0f;
+    static constexpr float SD1_FEEDBACK_R = 33000.0f;
+    static constexpr float SD1_DRIVE_POT_R = 1000000.0f;
     static constexpr float VF_DIODE = 1.0f;
+    static constexpr float SD1_SINGLE_DIODE_VF = 0.7f;
+    static constexpr float SD1_DUAL_DIODE_VF = 1.4f;
+    static constexpr float TS_FEEDBACK_CAP = 51e-12f;
+    static constexpr float SD1_POST_CLIP_LP_FC = 884.0f;
 
     static constexpr float ATTACK_CAPS[6] = {
         470e-9f, 220e-9f, 100e-9f, 47e-9f, 22e-9f, 10e-9f
@@ -100,10 +120,17 @@ private:
         return std::min(hi, std::max(lo, v));
     }
 
+    static float feedbackLowpassFc(float resistance, float capacitance) {
+        return 1.f / (2.f * static_cast<float>(M_PI) * resistance * capacitance);
+    }
+
     void updateModelOutput() {
         if (model == OverdriveModel::TS9) {
             outputRB = 470.0f;
             outputRC = 100000.0f;
+        } else if (model == OverdriveModel::SD1) {
+            outputRB = 1000.0f;
+            outputRC = 10000.0f;
         } else {
             outputRB = 100.0f;
             outputRC = 10000.0f;
@@ -112,6 +139,12 @@ private:
     }
 
     float softClipDiode(float x) const {
+        if (model == OverdriveModel::SD1) {
+            if (x >= 0.f) {
+                return SD1_SINGLE_DIODE_VF * std::tanh(x / SD1_SINGLE_DIODE_VF);
+            }
+            return -SD1_DUAL_DIODE_VF * std::tanh(-x / SD1_DUAL_DIODE_VF);
+        }
         return VF_DIODE * std::tanh(x / VF_DIODE);
     }
 };

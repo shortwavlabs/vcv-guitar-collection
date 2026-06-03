@@ -1,5 +1,7 @@
 # Overdrive Module Implementation Guide
 
+> Correction note: The third model is the Boss SD-1 Super OverDrive, not the Boss DS-1 Distortion. Older DS-1-specific sections in this draft are historical/stale and should not be used as implementation guidance.
+
 ## Table of Contents
 1. [Overview](#overview)
 2. [Circuit Analysis](#circuit-analysis)
@@ -20,7 +22,7 @@ This document provides a comprehensive guide for implementing a faithful digital
 
 - **Ibanez Tubescreamer TS-808** (1979-1980)
 - **Ibanez Tubescreamer TS-9** (1981-present)
-- **Boss DS-1 Distortion** (1978-present)
+- **Boss SD-1 Super OverDrive** (1981-present)
 
 The module will feature:
 - 3-way switch for model selection

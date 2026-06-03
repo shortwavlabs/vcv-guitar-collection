@@ -3,7 +3,6 @@
 #include "Oversampler.h"
 #include "SingleKnobNoiseGate.h"
 #include "SoftClipper.h"
-#include "HardClipper.h"
 #include "ToneStack.h"
 #include "TransistorStage.h"
 
@@ -20,15 +19,13 @@ public:
 
     void setSampleRate(double sr) {
         sampleRate = sr;
+        double stageSampleRate = sampleRate * static_cast<double>(Oversampler::kFactor);
         oversampler.setSampleRate(sr);
-        noiseGate.setSampleRate(sr);
-        inputBuffer.setSampleRate(sr);
-        outputBuffer.setSampleRate(sr);
-        softClipper.setSampleRate(sr);
-        hardClipper.setSampleRate(sr);
-        transistorBooster.setSampleRate(sr);
-        tsTone.setSampleRate(sr);
-        dsTone.setSampleRate(sr);
+        noiseGate.setSampleRate(stageSampleRate);
+        inputBuffer.setSampleRate(stageSampleRate);
+        outputBuffer.setSampleRate(stageSampleRate);
+        softClipper.setSampleRate(stageSampleRate);
+        tsTone.setSampleRate(stageSampleRate);
     }
 
     void setModel(OverdriveModel model) {
@@ -43,13 +40,11 @@ public:
     void setDrive(float value) {
         drive = clampf(value, 0.f, 1.f);
         softClipper.setDrive(drive);
-        hardClipper.setDrive(drive);
     }
 
     void setTone(float value) {
         tone = clampf(value, 0.f, 1.f);
         tsTone.setTone(tone);
-        dsTone.setTone(tone);
     }
 
     void setLevel(float value) {
@@ -72,22 +67,12 @@ public:
         switch (currentModel) {
             case OverdriveModel::TS808:
             case OverdriveModel::TS9:
+            case OverdriveModel::SD1:
                 for (int i = 0; i < Oversampler::kFactor; ++i) {
                     float sample = noiseGate.process(upsampled[i]);
                     sample = inputBuffer.process(sample);
                     sample = softClipper.process(sample);
                     sample = tsTone.process(sample);
-                    sample = outputBuffer.process(sample);
-                    processed[i] = sample;
-                }
-                break;
-            case OverdriveModel::DS1:
-                for (int i = 0; i < Oversampler::kFactor; ++i) {
-                    float sample = noiseGate.process(upsampled[i]);
-                    sample = inputBuffer.process(sample);
-                    sample = transistorBooster.process(sample);
-                    sample = hardClipper.process(sample);
-                    sample = dsTone.process(sample);
                     sample = outputBuffer.process(sample);
                     processed[i] = sample;
                 }
@@ -104,10 +89,7 @@ public:
         inputBuffer.reset();
         outputBuffer.reset();
         softClipper.reset();
-        hardClipper.reset();
-        transistorBooster.reset();
         tsTone.reset();
-        dsTone.reset();
     }
 
     bool isGateOpen() const {
@@ -123,10 +105,7 @@ private:
 
     EmitterFollower inputBuffer;
     SoftClipper softClipper;
-    HardClipper hardClipper;
-    TransistorBooster transistorBooster;
     TubeScreamerTone tsTone;
-    DS1Tone dsTone;
     EmitterFollower outputBuffer;
 
     float drive = 0.5f;

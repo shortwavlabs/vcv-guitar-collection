@@ -6,7 +6,7 @@
 Overdrive::Overdrive() {
     config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
-    configSwitch(MODEL_PARAM, 0.f, 2.f, 0.f, "Model", {"TS-808", "TS-9", "DS-1"});
+    configSwitch(MODEL_PARAM, 0.f, 2.f, 0.f, "Model", {"TS-808", "TS-9", "SD-1"});
     configParam(DRIVE_PARAM, 0.f, 1.f, 0.5f, "Drive");
     configParam(TONE_PARAM, 0.f, 1.f, 0.5f, "Tone");
     configParam(LEVEL_PARAM, 0.f, 1.f, 0.8f, "Level");
