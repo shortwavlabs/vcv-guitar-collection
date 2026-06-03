@@ -1,10 +1,20 @@
 #include "StrobeTuner.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
 namespace {
 constexpr float kStrobeLockCents = 0.1f;
+constexpr float kTrackInsetX = 10.f;
+constexpr float kTrackTop = 53.f;
+constexpr float kTrackHeight = 12.f;
+constexpr float kTrackGap = 4.f;
+constexpr int kTrackCount = 5;
+constexpr float kTrackAreaHeight = kTrackCount * kTrackHeight + (kTrackCount - 1) * kTrackGap;
+constexpr float kTrackArcDepth = 2.4f;
+constexpr float kScaleY = 44.f;
+constexpr float kBottomReadoutY = 151.f;
 
 const char* kNoteNames[12] = {
     "C", "C#", "D", "D#", "E", "F",
@@ -18,6 +28,24 @@ std::string formatMidiNote(int midiNote) {
     char buffer[16];
     std::snprintf(buffer, sizeof(buffer), "%s%d", kNoteNames[noteIndex], octave);
     return std::string(buffer);
+}
+
+float strobeTrackArcOffset(float normalizedX, float depth = kTrackArcDepth) {
+    const float x = normalizedX * 2.f - 1.f;
+    return depth * (1.f - x * x);
+}
+
+void strobeTrackPath(NVGcontext* vg, float x, float y, float width, float height, float depth = kTrackArcDepth) {
+    const float c1 = x + width * 0.28f;
+    const float c2 = x + width * 0.72f;
+    const float x2 = x + width;
+
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, x, y);
+    nvgBezierTo(vg, c1, y + depth, c2, y + depth, x2, y);
+    nvgLineTo(vg, x2, y + height);
+    nvgBezierTo(vg, c2, y + height + depth, c1, y + height + depth, x, y + height);
+    nvgClosePath(vg);
 }
 } // namespace
 
@@ -201,149 +229,226 @@ void StrobeTunerDisplay::draw(const DrawArgs& args) {
 void StrobeTunerDisplay::drawBackground(const DrawArgs& args) {
     const float w = box.size.x;
     const float h = box.size.y;
-    const float cx = w * 0.5f;
-    const float cy = h * 0.62f;
-    const float outerRadius = std::min(w, h) * 0.47f;
-    const float innerRadius = outerRadius - 24.f;
+    const float trackW = w - 2.f * kTrackInsetX;
 
     nvgBeginPath(args.vg);
-    nvgRoundedRect(args.vg, 0.f, 0.f, w, h, 4.f);
-    nvgFillColor(args.vg, nvgRGB(10, 10, 10));
+    nvgRoundedRect(args.vg, 0.f, 0.f, w, h, 5.f);
+    nvgFillColor(args.vg, nvgRGB(5, 6, 5));
+    nvgFill(args.vg);
+
+    NVGpaint bezel = nvgLinearGradient(
+        args.vg,
+        0.f, 0.f,
+        0.f, h,
+        nvgRGBA(52, 57, 46, 255),
+        nvgRGBA(15, 20, 15, 255));
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 1.f, 1.f, w - 2.f, h - 2.f, 4.5f);
+    nvgFillPaint(args.vg, bezel);
     nvgFill(args.vg);
 
     NVGpaint glass = nvgLinearGradient(
         args.vg,
-        0.f, 0.f,
-        0.f, h,
-        nvgRGBA(74, 30, 14, 255),
-        nvgRGBA(30, 11, 8, 255));
+        0.f, 4.f,
+        0.f, h - 4.f,
+        nvgRGBA(33, 41, 34, 255),
+        nvgRGBA(9, 12, 10, 255));
     nvgBeginPath(args.vg);
-    nvgRoundedRect(args.vg, 1.0f, 1.0f, w - 2.f, h - 2.f, 4.f);
+    nvgRoundedRect(args.vg, 5.f, 5.f, w - 10.f, h - 10.f, 3.5f);
     nvgFillPaint(args.vg, glass);
     nvgFill(args.vg);
 
-    NVGpaint vignette = nvgRadialGradient(
+    NVGpaint warmGlass = nvgRadialGradient(
         args.vg,
-        cx, cy,
-        innerRadius * 0.2f, outerRadius * 1.2f,
-        nvgRGBA(255, 150, 90, 20),
-        nvgRGBA(0, 0, 0, 140));
+        w * 0.5f, kTrackTop + kTrackAreaHeight * 0.45f,
+        8.f, w * 0.72f,
+        nvgRGBA(247, 150, 82, 34),
+        nvgRGBA(0, 0, 0, 122));
     nvgBeginPath(args.vg);
-    nvgRect(args.vg, 0.f, 0.f, w, h);
-    nvgFillPaint(args.vg, vignette);
+    nvgRoundedRect(args.vg, 5.f, 5.f, w - 10.f, h - 10.f, 3.5f);
+    nvgFillPaint(args.vg, warmGlass);
     nvgFill(args.vg);
 
+    // Recessed strobe aperture.
+    const float apertureY = kTrackTop - 6.f;
+    const float apertureH = kTrackAreaHeight + 12.f;
     nvgBeginPath(args.vg);
-    nvgRoundedRect(args.vg, 0.5f, 0.5f, w - 1.f, h - 1.f, 4.f);
-    nvgStrokeWidth(args.vg, 1.1f);
-    nvgStrokeColor(args.vg, nvgRGBA(124, 78, 50, 230));
-    nvgStroke(args.vg);
+    nvgRoundedRect(args.vg, 7.f, apertureY, w - 14.f, apertureH, 2.5f);
+    nvgFillColor(args.vg, nvgRGBA(3, 4, 3, 210));
+    nvgFill(args.vg);
 
-    // Arc guides for circular strobe wheel.
-    nvgBeginPath(args.vg);
-    nvgArc(args.vg, cx, cy, outerRadius, -2.85f, -0.29f, NVG_CW);
-    nvgArc(args.vg, cx, cy, innerRadius, -0.29f, -2.85f, NVG_CCW);
-    nvgClosePath(args.vg);
-    nvgStrokeColor(args.vg, nvgRGBA(210, 130, 84, 80));
-    nvgStrokeWidth(args.vg, 0.9f);
-    nvgStroke(args.vg);
+    for (int i = 0; i < kTrackCount; ++i) {
+        const float y = kTrackTop + i * (kTrackHeight + kTrackGap);
+        NVGpaint trough = nvgLinearGradient(
+            args.vg,
+            0.f, y,
+            0.f, y + kTrackHeight,
+            nvgRGBA(23, 14, 9, 235),
+            nvgRGBA(7, 5, 4, 235));
+        strobeTrackPath(args.vg, kTrackInsetX, y, trackW, kTrackHeight);
+        nvgFillPaint(args.vg, trough);
+        nvgFill(args.vg);
 
-    for (int i = 0; i < 11; ++i) {
-        const float t = static_cast<float>(i) / 10.f;
-        const float theta = -2.75f + t * 2.35f;
-        const float x0 = cx + std::cos(theta) * (innerRadius - 1.f);
-        const float y0 = cy + std::sin(theta) * (innerRadius - 1.f);
-        const float x1 = cx + std::cos(theta) * (outerRadius + 1.f);
-        const float y1 = cy + std::sin(theta) * (outerRadius + 1.f);
-
-        nvgBeginPath(args.vg);
-        nvgMoveTo(args.vg, x0, y0);
-        nvgLineTo(args.vg, x1, y1);
-        nvgStrokeColor(args.vg, nvgRGBA(225, 160, 112, (i % 2 == 0) ? 95 : 62));
-        nvgStrokeWidth(args.vg, (i % 2 == 0) ? 1.0f : 0.7f);
+        strobeTrackPath(args.vg, kTrackInsetX + 0.5f, y + 0.5f, trackW - 1.f, kTrackHeight - 1.f);
+        nvgStrokeColor(args.vg, nvgRGBA(180, 105, 58, 58));
+        nvgStrokeWidth(args.vg, 0.7f);
         nvgStroke(args.vg);
     }
+
+    const float centerX = w * 0.5f;
+    nvgBeginPath(args.vg);
+    nvgRect(args.vg, centerX - 0.45f, apertureY - 2.f, 0.9f, apertureH + 4.f);
+    nvgFillColor(args.vg, nvgRGBA(255, 223, 180, 56));
+    nvgFill(args.vg);
+
+    for (int i = 0; i <= 10; ++i) {
+        const float t = static_cast<float>(i) / 10.f;
+        const float x = kTrackInsetX + t * trackW;
+        const bool major = (i == 0 || i == 5 || i == 10);
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, x, kScaleY + (major ? 2.f : 4.f));
+        nvgLineTo(args.vg, x, kScaleY + 8.f);
+        nvgStrokeColor(args.vg, nvgRGBA(220, 160, 105, major ? 118 : 64));
+        nvgStrokeWidth(args.vg, major ? 0.9f : 0.55f);
+        nvgStroke(args.vg);
+    }
+
+    NVGpaint bevel = nvgLinearGradient(
+        args.vg,
+        0.f, 0.f,
+        0.f, h,
+        nvgRGBA(255, 255, 255, 44),
+        nvgRGBA(0, 0, 0, 135));
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 5.5f, 5.5f, w - 11.f, h - 11.f, 3.f);
+    nvgStrokeWidth(args.vg, 0.8f);
+    nvgStrokeColor(args.vg, nvgRGBA(210, 170, 130, 95));
+    nvgStroke(args.vg);
+
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 6.f, 6.f, w - 12.f, h - 12.f, 3.f);
+    nvgFillPaint(args.vg, bevel);
+    nvgFill(args.vg);
 }
 
 void StrobeTunerDisplay::drawStripes(const DrawArgs& args) {
-    if (!module) {
-        return;
+    bool valid = false;
+    float phaseCycles = 0.f;
+    float cents = 0.f;
+    float confidence = 0.f;
+    if (module) {
+        valid = module->uiPitchValid.load(std::memory_order_relaxed);
+        phaseCycles = module->uiPhaseCycles.load(std::memory_order_relaxed);
+        cents = module->uiCents.load(std::memory_order_relaxed);
+        confidence = swv::compat::clamp(module->uiConfidence.load(std::memory_order_relaxed), 0.f, 1.f);
     }
-
-    const bool valid = module->uiPitchValid.load(std::memory_order_relaxed);
-    const float phaseCycles = module->uiPhaseCycles.load(std::memory_order_relaxed);
-    const float cents = module->uiCents.load(std::memory_order_relaxed);
-    const float confidence = swv::compat::clamp(module->uiConfidence.load(std::memory_order_relaxed), 0.f, 1.f);
 
     const float w = box.size.x;
     const float h = box.size.y;
-    const float cx = w * 0.5f;
-    const float cy = h * 0.62f;
-    const float ringRadius = std::min(w, h) * 0.43f;
+    const float trackW = w - 2.f * kTrackInsetX;
+    const float centerX = w * 0.5f;
     const float absCents = std::fabs(cents);
     const bool locked = valid && absCents <= kStrobeLockCents;
-    const float spinAngle = phaseCycles * 2.f * static_cast<float>(M_PI);
+    const float glow = valid ? (0.38f + 0.62f * confidence) : 0.16f;
+    const int stripeR = locked ? 160 : 255;
+    const int stripeG = locked ? 255 : 180;
+    const int stripeB = locked ? 142 : 86;
 
     nvgSave(args.vg);
-    nvgScissor(args.vg, 2.f, 18.f, w - 4.f, h - 44.f);
+    nvgScissor(args.vg, kTrackInsetX, kTrackTop - 1.f, trackW, kTrackAreaHeight + kTrackArcDepth + 2.f);
 
-    const int padCount = 18;
-    const int barsPerPad = 7;
-    const float padWidth = 18.f;
-    const float padHeight = 20.f;
-    const float baseAlpha = valid ? (90.f + 135.f * confidence) : 28.f;
-    const int baseR = locked ? 160 : 255;
-    const int baseG = locked ? 255 : 178;
-    const int baseB = locked ? 132 : 95;
-    const float startAngle = -2.95f;
-    const float sweepAngle = 2.70f;
-
-    for (int i = 0; i < padCount; ++i) {
-        const float t = static_cast<float>(i) / static_cast<float>(padCount - 1);
-        const float theta = startAngle + t * sweepAngle + spinAngle;
-        const float x = cx + std::cos(theta) * ringRadius;
-        const float y = cy + std::sin(theta) * ringRadius;
-
-        nvgSave(args.vg);
-        nvgTranslate(args.vg, x, y);
-        nvgRotate(args.vg, theta + static_cast<float>(M_PI) * 0.5f);
-
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, -padWidth * 0.5f, -padHeight * 0.5f, padWidth, padHeight, 1.8f);
-        nvgFillColor(args.vg, nvgRGBA(52, 24, 14, static_cast<unsigned char>(baseAlpha * 0.35f)));
-        nvgFill(args.vg);
-
-        for (int b = 0; b < barsPerPad; ++b) {
-            const float barT = static_cast<float>(b) / static_cast<float>(barsPerPad - 1);
-            const float barX = -padWidth * 0.5f + 1.5f + barT * (padWidth - 3.0f);
-            const float barAlpha = baseAlpha * (0.55f + 0.45f * std::sin(spinAngle * 1.8f + i * 0.32f + b * 0.41f));
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, barX, -padHeight * 0.42f, 1.0f, padHeight * 0.84f);
-            nvgFillColor(args.vg, nvgRGBA(baseR, baseG, baseB, static_cast<unsigned char>(swv::compat::clamp(barAlpha, 0.f, 255.f))));
-            nvgFill(args.vg);
+    const float periods[kTrackCount] = {10.8f, 9.4f, 8.3f, 7.2f, 6.3f};
+    for (int row = 0; row < kTrackCount; ++row) {
+        const float y = kTrackTop + row * (kTrackHeight + kTrackGap);
+        const float period = periods[row];
+        const float stripeW = period * 0.44f;
+        const float rowPhase = static_cast<float>(row) * 0.173f;
+        float offset = std::fmod((phaseCycles + rowPhase) * period, period);
+        if (offset < 0.f) {
+            offset += period;
         }
 
-        nvgRestore(args.vg);
+        for (float x = kTrackInsetX - period * 2.f + offset; x < kTrackInsetX + trackW + period; x += period) {
+            const float alpha = swv::compat::clamp((valid ? 168.f : 76.f) * glow, 18.f, 228.f);
+            const float stripeCenterX = x + stripeW * 0.5f;
+            const float normalizedX = swv::compat::clamp((stripeCenterX - kTrackInsetX) / trackW, 0.f, 1.f);
+            const float stripeY = y + strobeTrackArcOffset(normalizedX);
+            NVGpaint stripe = nvgLinearGradient(
+                args.vg,
+                x, stripeY,
+                x, stripeY + kTrackHeight,
+                nvgRGBA(stripeR, stripeG, stripeB, static_cast<unsigned char>(alpha)),
+                nvgRGBA(stripeR, stripeG, stripeB, static_cast<unsigned char>(alpha * 0.35f)));
+
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, x, stripeY + 1.2f, stripeW, kTrackHeight - 2.4f, 1.0f);
+            nvgFillPaint(args.vg, stripe);
+            nvgFill(args.vg);
+
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, x + stripeW * 0.18f, stripeY + 1.8f, std::max(0.8f, stripeW * 0.18f), kTrackHeight - 3.6f);
+            nvgFillColor(args.vg, nvgRGBA(255, 244, 205, static_cast<unsigned char>(alpha * 0.46f)));
+            nvgFill(args.vg);
+        }
     }
 
-    NVGpaint edgeShade = nvgLinearGradient(
-        args.vg,
-        0.f, 18.f,
-        0.f, h - 24.f,
-        nvgRGBA(0, 0, 0, 120),
-        nvgRGBA(0, 0, 0, 30));
+    nvgResetScissor(args.vg);
+
+    const float hairlineAlpha = locked ? 220.f : 150.f;
     nvgBeginPath(args.vg);
-    nvgRect(args.vg, 0.f, 18.f, w, h - 42.f);
+    nvgRect(args.vg, centerX - 0.6f, kTrackTop - 8.f, 1.2f, kTrackAreaHeight + 16.f);
+    nvgFillColor(args.vg, locked
+        ? nvgRGBA(155, 255, 166, static_cast<unsigned char>(hairlineAlpha))
+        : nvgRGBA(255, 204, 140, static_cast<unsigned char>(hairlineAlpha)));
+    nvgFill(args.vg);
+
+    nvgBeginPath(args.vg);
+    nvgCircle(args.vg, centerX, kTrackTop + kTrackAreaHeight * 0.5f, locked ? 4.2f : 3.2f);
+    nvgFillColor(args.vg, locked
+        ? nvgRGBA(128, 255, 150, 85)
+        : nvgRGBA(255, 172, 96, 48));
+    nvgFill(args.vg);
+
+    NVGpaint edgeShade = nvgBoxGradient(
+        args.vg,
+        7.f, kTrackTop - 6.f,
+        w - 14.f, kTrackAreaHeight + 12.f,
+        2.f, 15.f,
+        nvgRGBA(0, 0, 0, 0),
+        nvgRGBA(0, 0, 0, 165));
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 7.f, kTrackTop - 6.f, w - 14.f, kTrackAreaHeight + 12.f, 2.5f);
     nvgFillPaint(args.vg, edgeShade);
     nvgFill(args.vg);
 
-    nvgResetScissor(args.vg);
+    const float pointerT = valid ? swv::compat::clamp((cents + 50.f) / 100.f, 0.f, 1.f) : 0.5f;
+    const float pointerX = kTrackInsetX + pointerT * trackW;
+    nvgBeginPath(args.vg);
+    nvgMoveTo(args.vg, pointerX, kScaleY + 9.f);
+    nvgLineTo(args.vg, pointerX - 3.5f, kScaleY + 14.f);
+    nvgLineTo(args.vg, pointerX + 3.5f, kScaleY + 14.f);
+    nvgClosePath(args.vg);
+    nvgFillColor(args.vg, locked
+        ? nvgRGBA(140, 255, 160, 218)
+        : nvgRGBA(255, 184, 98, valid ? 212 : 80));
+    nvgFill(args.vg);
+
+    NVGpaint reflection = nvgLinearGradient(
+        args.vg,
+        0.f, 8.f,
+        0.f, h * 0.54f,
+        nvgRGBA(255, 255, 255, 45),
+        nvgRGBA(255, 255, 255, 0));
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 8.f, 7.f, w - 16.f, h * 0.34f, 2.5f);
+    nvgFillPaint(args.vg, reflection);
+    nvgFill(args.vg);
+
     nvgRestore(args.vg);
 }
 
 void StrobeTunerDisplay::drawReadout(const DrawArgs& args) {
     const float w = box.size.x;
-    const float h = box.size.y;
 
     std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
     if (!font) {
@@ -366,22 +471,36 @@ void StrobeTunerDisplay::drawReadout(const DrawArgs& args) {
         midi = module->uiMidiNote.load(std::memory_order_relaxed);
     }
 
-    const float noteY = h * 0.62f;
+    const float absCents = std::fabs(cents);
+    const bool locked = valid && absCents <= kStrobeLockCents;
 
-    nvgFontSize(args.vg, 42.f);
-    nvgFillColor(args.vg, valid ? nvgRGB(245, 178, 122) : nvgRGB(145, 110, 90));
+    nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgFontSize(args.vg, 30.f);
+    nvgFillColor(args.vg, valid
+        ? (locked ? nvgRGB(180, 255, 178) : nvgRGB(255, 190, 118))
+        : nvgRGB(116, 95, 78));
     std::string noteText = valid ? formatMidiNote(midi) : "--";
-    nvgText(args.vg, w * 0.5f, noteY, noteText.c_str(), nullptr);
+    nvgText(args.vg, w * 0.5f, 23.f, noteText.c_str(), nullptr);
 
     char centsText[32];
     if (valid) {
-        std::snprintf(centsText, sizeof(centsText), "%+.2f c", static_cast<double>(cents));
+        std::snprintf(centsText, sizeof(centsText), "%+.2fc", static_cast<double>(cents));
     } else {
-        std::snprintf(centsText, sizeof(centsText), "--.- c");
+        std::snprintf(centsText, sizeof(centsText), "--.-c");
     }
-    nvgFontSize(args.vg, 14.f);
-    nvgFillColor(args.vg, nvgRGB(225, 170, 130));
-    nvgText(args.vg, w * 0.5f, noteY + 28.f, centsText, nullptr);
+    nvgFontSize(args.vg, 11.f);
+    nvgFillColor(args.vg, valid ? nvgRGB(231, 175, 119) : nvgRGB(112, 89, 72));
+    nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    nvgText(args.vg, w - 12.f, 24.f, centsText, nullptr);
+
+    nvgFontSize(args.vg, 7.f);
+    nvgFillColor(args.vg, nvgRGBA(218, 160, 104, 165));
+    nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    nvgText(args.vg, kTrackInsetX, kScaleY - 3.f, "FLAT", nullptr);
+    nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(args.vg, w * 0.5f, kScaleY - 3.f, "0", nullptr);
+    nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    nvgText(args.vg, w - kTrackInsetX, kScaleY - 3.f, "SHARP", nullptr);
 
     char freqText[32];
     if (valid) {
@@ -389,13 +508,29 @@ void StrobeTunerDisplay::drawReadout(const DrawArgs& args) {
     } else {
         std::snprintf(freqText, sizeof(freqText), "--.-- Hz");
     }
-    nvgFontSize(args.vg, 12.f);
-    nvgFillColor(args.vg, nvgRGB(170, 125, 95));
-    nvgText(args.vg, w * 0.5f, h - 14.f, freqText, nullptr);
+    nvgFontSize(args.vg, 10.f);
+    nvgFillColor(args.vg, valid ? nvgRGB(170, 128, 91) : nvgRGB(91, 74, 62));
+    nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(args.vg, w * 0.5f, kBottomReadoutY, freqText, nullptr);
 
-    // Small confidence meter (left-bottom), inspired by clip-on hardware indicators.
+    const char* statusText = "NO SIGNAL";
+    if (valid) {
+        if (locked) {
+            statusText = "LOCK";
+        } else {
+            statusText = (cents < 0.f) ? "FLAT" : "SHARP";
+        }
+    }
+    nvgFontSize(args.vg, 7.5f);
+    nvgFillColor(args.vg, locked
+        ? nvgRGBA(158, 255, 168, 210)
+        : nvgRGBA(225, 155, 95, valid ? 188 : 92));
+    nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    nvgText(args.vg, w - 10.f, kBottomReadoutY, statusText, nullptr);
+
+    // Small confidence meter, styled like hardware signal-strength lamps.
     const float meterX = 10.f;
-    const float meterY = h - 21.f;
+    const float meterY = kBottomReadoutY - 4.f;
     const float meterW = 23.f;
     const float meterH = 8.f;
 
