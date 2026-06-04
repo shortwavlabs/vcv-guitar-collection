@@ -27,7 +27,7 @@ This document provides a comprehensive guide for implementing a faithful digital
 The module will feature:
 - 3-way switch for model selection
 - Faithful component-level circuit modeling
-- Attack knob (6-position step knob: 0 = 72Hz HPF (Deep), 1-5 = HPF at increasing frequencies)
+- Attack knob (6-position step knob: Precision Drive-style cap bank in the clipping op-amp gain leg)
 - One-knob noise gate (threshold control only, other parameters fixed)
 - 8HP panel layout (similar to CabSim module)
 - Mono processing only (no polyphony)
@@ -769,7 +769,7 @@ private:
 
 ## Attack Filter Implementation
 
-The attack knob is based on the **Horizon Devices Precision Drive** design. It is a **6-position step knob** (values 0-5) that controls the feedback loop capacitor in the clipping stage, shaping how much bass/low-mid frequencies are affected by the distortion.
+The attack knob is based on the **Horizon Devices Precision Drive** design. It is a **6-position step knob** (values 0-5) that controls the selected capacitor in the first clipping op-amp's frequency-dependent gain leg, shaping how much bass/low-mid content drives the clipping stage.
 
 ### Design Rationale
 
@@ -777,34 +777,36 @@ The attack knob is based on the **Horizon Devices Precision Drive** design. It i
 - [Horizon Devices User's Guide](https://horizondevices.com/pages/users-guide-pd) - Official documentation
 - [DIYstompboxes Forum - Precision Drive Schematic Discussion](https://www.diystompboxes.com/smfforum/index.php?topic=126289.0) - Technical analysis
 - [PedalPCB Dwarven Hammer Build Docs](https://docs.pedalpcb.com/project/PedalPCB-DwarvenHammer.pdf) - DIY clone documentation
+- [PCB Guitar Mania Collision Drive Build Docs](https://pcbguitarmania.com/wp-content/uploads/2019/05/Collision-Drive-Building-Docs.pdf) - DIY clone schematic
 
 ### How It Works
 
-The Precision Drive is essentially a Tube Screamer with a **6-way rotary switch** that changes the capacitor value in the op-amp feedback loop. This differs from a simple high-pass filter approach:
+The Precision Drive is essentially a Tube Screamer-derived clipping stage with a rotary switch that changes the capacitor value in the op-amp's frequency-dependent gain/reference leg. This differs from a simple post-clipping high-pass filter:
 
 - **Left (counter-clockwise):** Larger capacitor = more lower-mids punch, old-school thick tone
 - **Right (clockwise):** Smaller capacitor = tighter bass response, more defined and pick-y modern tone
 
 ### Circuit Implementation
 
-The Attack switch controls capacitor C3 in the Tubescreamer's clipping stage feedback loop. With a 4.7KΩ resistor to ground (R4):
+Precision Drive-derived schematics place the attack rotary cap bank in the clipping op-amp's reference leg through a 1K resistor, with a 120pF cap effectively in parallel with the selected capacitor. In DSP, model it as the high-pass path for the extra non-inverting clipping gain:
 
 ```
-Corner frequency: fc = 1 / (2π × R4 × C3)
+boosted = input + highpass(input, fc) * (gain - 1)
+fc = 1 / (2π × 1K × (Cselected + 120pF))
 ```
 
 ### Capacitor Value Mapping
 
 | Position | Capacitor Value | Corner Frequency (fc) | Description |
 |----------|-----------------|----------------------|-------------|
-| 0 | 470 nF | ~72 Hz | Maximum bass, thickest low-end |
-| 1 | 220 nF | ~153 Hz | Warm, full-range low-mids |
-| 2 | 100 nF | ~338 Hz | Balanced, classic TS response |
-| 3 | 47 nF | ~720 Hz | Standard Tubescreamer (original C3 value) |
-| 4 | 22 nF | ~1,540 Hz | Tight, focused midrange |
-| 5 | 10 nF | ~3,386 Hz | Tightest, most defined/pick-y |
+| 0 | 470 nF + 120 pF | ~339 Hz | Loosest, thickest low-end |
+| 1 | 220 nF + 120 pF | ~723 Hz | Warm, full low-mids |
+| 2 | 100 nF + 120 pF | ~1,590 Hz | Balanced/tight |
+| 3 | 68 nF + 120 pF | ~2,336 Hz | Modern tight |
+| 4 | 47 nF + 120 pF | ~3,378 Hz | Very tight/pick-y |
+| 5 | 33 nF + 120 pF | ~4,806 Hz | Tightest, most defined |
 
-**Note:** Position 3 (47nF) is the original Tubescreamer value.
+**Note:** Public clone docs expose 8-position and 12-position cap banks; this module uses six positions to match the Horizon Nano Attack / Precision Drive-style control range.
 
 ### Filter Design
 
@@ -812,17 +814,12 @@ Corner frequency: fc = 1 / (2π × R4 × C3)
 // Feedback loop capacitor switch (Precision Drive style)
 struct AttackCapacitorSwitch {
     double sampleRate = 48000.0;
-    int position = 3;  // Default to standard TS value (47nF)
+    int position = 3;
 
-    // Tubescreamer feedback loop components
-    float R4 = 4700.0f;  // 4.7K to ground
+    float attackSeriesR = 1000.0f;
+    float parallelCap = 120e-12f;
     std::vector<float> capValues = {
-        470e-9f,  // Position 0: ~72 Hz (Deep Bass)
-        220e-9f,  // Position 1: ~153 Hz
-        100e-9f,  // Position 2: ~338 Hz
-        47e-9f,   // Position 3: ~720 Hz (Standard TS)
-        22e-9f,   // Position 4: ~1.5 kHz
-        10e-9f    // Position 5: ~3.4 kHz
+        470e-9f, 220e-9f, 100e-9f, 68e-9f, 47e-9f, 33e-9f
     };
 
     // Filter state (high-pass in feedback loop)
@@ -838,27 +835,23 @@ struct AttackCapacitorSwitch {
 
     // Calculate corner frequency for current position
     float getCornerFrequency() const {
-        float C = capValues[position];
-        return 1.0f / (2.0f * M_PI * R4 * C);
+        float C = capValues[position] + parallelCap;
+        return 1.0f / (2.0f * M_PI * attackSeriesR * C);
     }
 
-    // Process as high-pass filter in feedback loop
-    float process(float input, float feedbackResistance) {
-        float C = capValues[position];
-        float R_total = R4 + feedbackResistance;
+    // Process as the high-pass path for the clipping stage's extra gain.
+    float process(float input, float gain) {
+        float hpFc = getCornerFrequency();
+        float hpCoeff = std::exp(-2.0f * M_PI * hpFc / sampleRate);
+        float hpOut = hpCoeff * (hpState + input - previousInput);
+        hpState = hpOut;
+        previousInput = input;
 
-        // High-pass filter coefficient
-        float wc = 2.0f * M_PI * R4 * C / (float)sampleRate;
-        float alpha = wc / (1.0f + wc);
-
-        hpState = alpha * (input - hpfs1);
-        hpfs1 = hpState;
-
-        return input - hpState;  // High-pass effect
+        return input + hpOut * (gain - 1.0f);
     }
 
 private:
-    float hpfs1 = 0.0f;
+    float previousInput = 0.0f;
 };
 ```
 
@@ -868,20 +861,23 @@ The Attack capacitor is integrated into the Tubescreamer soft clipping stage:
 
 ```cpp
 struct SoftClipperWithAttack {
-    // Standard Tubescreamer components
-    float R4 = 4700.0f;      // 4.7K to ground
+    // Overdrive clipping-stage components
+    float feedbackGroundR = 4700.0f;
     float R6 = 51000.0f;     // 51K series resistor
     float C4 = 51e-12f;      // 51pF (LPF across diodes)
     float Vf = 1.0f;         // Diode forward voltage
 
-    // Attack switch capacitor
+    // Precision Drive-derived attack switch in the clipping-stage reference leg
+    float attackSeriesR = 1000.0f;
+    float attackParallelCap = 120e-12f;
     std::vector<float> attackCaps = {
-        470e-9f, 220e-9f, 100e-9f, 47e-9f, 22e-9f, 10e-9f
+        470e-9f, 220e-9f, 100e-9f, 68e-9f, 47e-9f, 33e-9f
     };
-    int attackPosition = 3;  // Default to standard TS
+    int attackPosition = 3;
 
     // Filter states
     float hpState = 0.0f;
+    float hpPrevInput = 0.0f;
     float lpState = 0.0f;
     double sampleRate = 48000.0;
 
@@ -899,19 +895,18 @@ struct SoftClipperWithAttack {
         float R_feedback = R6 + R_dist;
 
         // Gain calculation
-        float gain = 1.0f + R_feedback / R4;
+        float gain = 1.0f + R_feedback / feedbackGroundR;
 
         // Get attack capacitor for current position
-        float C_attack = attackCaps[attackPosition];
+        float C_attack = attackCaps[attackPosition] + attackParallelCap;
+        float hpFc = 1.0f / (2.0f * M_PI * attackSeriesR * C_attack);
+        float hpCoeff = std::exp(-2.0f * M_PI * hpFc / sampleRate);
+        float hpOut = hpCoeff * (hpState + input - hpPrevInput);
+        hpState = hpOut;
+        hpPrevInput = input;
 
-        // High-pass filter in feedback loop (R4, C_attack)
-        float wc_hp = 2.0f * M_PI * R4 * C_attack / sampleRate;
-        float alpha_hp = wc_hp / (1.0f + wc_hp);
-        float hp_out = alpha_hp * (input - hpState);
-        hpState = hp_out + alpha_hp * (input - hpState);
-
-        // Apply gain to high-pass filtered signal
-        float amplified = hp_out * gain;
+        // Low frequencies keep unity gain; attack controls the extra clipping gain.
+        float amplified = input + hpOut * (gain - 1.0f);
 
         // Diode clipping (soft, in feedback)
         float clipped = softClipDiode(amplified, Vf);
@@ -983,8 +978,8 @@ enum ParamId {
 
 void configParams() {
     // Attack: 6-position step knob
-    configParam(ATTACK_PARAM, 0.f, 5.f, 3.f, "Attack");
-    // Default to position 3 (47nF - original Tubescreamer)
+    configParam(ATTACK_PARAM, 0.f, 5.f, 2.f, "Attack", " position", 0.f, 1.f, 1.f);
+    // Default to internal position 2, displayed as position 3
 }
 
 // In process()
@@ -1004,12 +999,12 @@ odDsp->setAttack(attackPos);
 
 | Position | Capacitor | Corner Fc | Sound Character |
 |----------|-----------|----------|-----------------|
-| 0 | 470 nF | 72 Hz | Thick, full-range, doom-y low-end |
-| 1 | 220 nF | 153 Hz | Warm, punchy low-mids |
-| 2 | 100 nF | 338 Hz | Balanced, classic overdrive |
-| 3 | 47 nF | 720 Hz | Original Tubescreamer |
-| 4 | 22 nF | 1,540 Hz | Tight, focused midrange |
-| 5 | 10 nF | 3,386 Hz | Modern, djent, super defined |
+| 0 | 470 nF + 120 pF | 339 Hz | Thickest low-end |
+| 1 | 220 nF + 120 pF | 723 Hz | Warm, punchy low-mids |
+| 2 | 100 nF + 120 pF | 1,590 Hz | Balanced/tight |
+| 3 | 68 nF + 120 pF | 2,336 Hz | Modern tight |
+| 4 | 47 nF + 120 pF | 3,378 Hz | Very tight/pick-y |
+| 5 | 33 nF + 120 pF | 4,806 Hz | Tightest, most defined |
 
 ---
 
@@ -1148,16 +1143,16 @@ private:
 
 ### Placement in Signal Chain
 
-Place the noise gate **after the attack filter** but **before the clipping stage**:
+Place the noise gate before the clipping stage. The attack cap is not a separate block before the gate; it is part of the clipping-stage gain response:
 
 ```
-Input → [Attack HPF] → [Noise Gate] → [Clipping Stage] → [Tone] → [Output]
+Input → [Noise Gate] → [Clipping Stage with Attack Cap] → [Tone] → [Output]
 ```
 
 This order ensures:
-1. Attack filter shapes the signal first
-2. Noise gate removes low-level noise before distortion amplification
-3. Clipping stage operates on gated signal (noise isn't further amplified)
+1. Noise gate removes low-level noise before distortion amplification
+2. Attack shapes which frequencies receive the extra clipping-stage gain
+3. Clipping stage operates on the gated, frequency-shaped signal
 
 ### VCV Rack Parameter Configuration
 
@@ -1335,7 +1330,7 @@ TEST_F(OverdriveTest, DS1_HardClipping) {
 }
 
 TEST_F(OverdriveTest, AttackFilter) {
-    od.setAttack(5);  // Maximum attack (position 5 = 1000 Hz HPF)
+    od.setAttack(5);  // Maximum attack (position 5 ~= 4.8 kHz clipping-gain HPF)
 
     // Low frequency should be attenuated
     float lowFreq = 50.0f;
@@ -1344,7 +1339,7 @@ TEST_F(OverdriveTest, AttackFilter) {
 }
 
 TEST_F(OverdriveTest, AttackDeepBass) {
-    od.setAttack(0);  // Position 0 = 470nF (72Hz)
+    od.setAttack(0);  // Position 0 = 470nF + 120pF (~339Hz)
 
     // Sub-bass should be slightly attenuated, but guitar range passes
     float lowFreq = 40.0f;

@@ -10,8 +10,8 @@ Overdrive::Overdrive() {
     configParam(DRIVE_PARAM, 0.f, 1.f, 0.5f, "Drive");
     configParam(TONE_PARAM, 0.f, 1.f, 0.5f, "Tone");
     configParam(LEVEL_PARAM, 0.f, 1.f, 0.8f, "Level");
-    configParam(ATTACK_PARAM, 0.f, 5.f, 3.f, "Attack", " position");
-    configParam(GATE_PARAM, 0.f, 1.f, 0.f, "Gate");
+    configParam(ATTACK_PARAM, 0.f, 5.f, 2.f, "Attack", " position", 0.f, 1.f, 1.f);
+    configParam(GATE_PARAM, 0.f, 1.f, 0.5f, "Gate");
     configButton(BYPASS_PARAM, "Bypass");
 
     configInput(AUDIO_INPUT, "Audio");

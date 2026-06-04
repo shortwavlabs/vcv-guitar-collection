@@ -1237,6 +1237,65 @@ namespace TestSuite
     T_ASSERT_NEAR(ctx, TubeScreamerTone::getToneHighpassFrequency(), 3288.f, 25.f);
   }
 
+  void test_attack_positions_use_precision_drive_cap_bank(TestContext &ctx)
+  {
+    std::printf("Testing Precision Drive-style attack cap bank...\n");
+
+    SoftClipper clipper;
+    float expectedHz[] = {339.f, 723.f, 1590.f, 2336.f, 3378.f, 4806.f};
+    for (int attack = 0; attack < 6; ++attack) {
+      clipper.setAttackPosition(attack);
+      float cutoff = clipper.getAttackHighpassFrequency();
+      T_ASSERT_NEAR(ctx, cutoff, expectedHz[attack], expectedHz[attack] * 0.01f);
+      if (attack > 0) {
+        clipper.setAttackPosition(attack - 1);
+        T_ASSERT(ctx, cutoff > clipper.getAttackHighpassFrequency());
+      }
+    }
+  }
+
+  float clipper_sine_rms(OverdriveModel model, int attack, float frequency, float amplitude = 0.2f, float drive = 0.35f)
+  {
+    SoftClipper clipper;
+    clipper.setSampleRate(48000.0);
+    clipper.setModel(model);
+    clipper.setDrive(drive);
+    clipper.setAttackPosition(attack);
+
+    float sum = 0.f;
+    int count = 0;
+    for (int i = 0; i < 4096; ++i) {
+      float input = amplitude * std::sin(2.f * static_cast<float>(M_PI) * frequency * static_cast<float>(i) / 48000.f);
+      float output = clipper.process(input);
+      if (i > 512) {
+        sum += output * output;
+        ++count;
+      }
+    }
+    return std::sqrt(sum / static_cast<float>(count));
+  }
+
+  void test_higher_attack_cuts_more_low_frequency_content(TestContext &ctx)
+  {
+    std::printf("Testing higher attack settings cut more low end...\n");
+
+    T_ASSERT(ctx, clipper_sine_rms(OverdriveModel::TS808, 5, 110.f) < clipper_sine_rms(OverdriveModel::TS808, 0, 110.f) * 0.5f);
+    T_ASSERT(ctx, clipper_sine_rms(OverdriveModel::TS9, 5, 110.f) < clipper_sine_rms(OverdriveModel::TS9, 0, 110.f) * 0.5f);
+    T_ASSERT(ctx, clipper_sine_rms(OverdriveModel::SD1, 5, 110.f) < clipper_sine_rms(OverdriveModel::SD1, 0, 110.f) * 0.5f);
+  }
+
+  void test_higher_attack_reduces_lows_more_than_highs(TestContext &ctx)
+  {
+    std::printf("Testing attack behaves like a pre-clipping low cut...\n");
+
+    OverdriveModel models[] = {OverdriveModel::TS808, OverdriveModel::TS9, OverdriveModel::SD1};
+    for (OverdriveModel model : models) {
+      float lowRatio = clipper_sine_rms(model, 5, 110.f, 0.01f) / clipper_sine_rms(model, 0, 110.f, 0.01f);
+      float highRatio = clipper_sine_rms(model, 5, 2000.f, 0.01f) / clipper_sine_rms(model, 0, 2000.f, 0.01f);
+      T_ASSERT(ctx, lowRatio < highRatio * 0.35f);
+    }
+  }
+
   float tone_sine_rms(float tone, float frequency)
   {
     TubeScreamerTone toneStack;
@@ -1655,6 +1714,9 @@ namespace TestSuite
     test_single_knob_noise_gate(ctx);
     test_soft_clipper_behavior(ctx);
     test_tube_screamer_schematic_filter_frequencies(ctx);
+    test_attack_positions_use_precision_drive_cap_bank(ctx);
+    test_higher_attack_cuts_more_low_frequency_content(ctx);
+    test_higher_attack_reduces_lows_more_than_highs(ctx);
     test_tube_screamer_tone_adds_treble_without_dropping_body(ctx);
     test_sd1_soft_clipper_is_asymmetric(ctx);
     test_tone_stack_extremes(ctx);

@@ -46,15 +46,14 @@ public:
         float drivePot = model == OverdriveModel::SD1 ? SD1_DRIVE_POT_R : TS_DRIVE_POT_R;
         float feedbackR = fixedFeedback + drive * drivePot;
 
-        float attackCap = ATTACK_CAPS[attackPosition];
-        float hpFc = 1.f / (2.f * static_cast<float>(M_PI) * FEEDBACK_GROUND_R * attackCap);
+        float hpFc = getAttackHighpassFrequency();
         float hpCoeff = std::exp(-2.f * static_cast<float>(M_PI) * hpFc / static_cast<float>(sampleRate));
         float hpOut = hpCoeff * (hpState + input - hpPrevInput);
         hpState = hpOut;
         hpPrevInput = input;
 
         float gain = 1.f + feedbackR / FEEDBACK_GROUND_R;
-        float boosted = hpOut * gain;
+        float boosted = input + hpOut * (gain - 1.f);
 
         float clipped = softClipDiode(boosted);
 
@@ -84,6 +83,11 @@ public:
         return feedbackLowpassFc(fixedFeedback + drive * drivePot, TS_FEEDBACK_CAP);
     }
 
+    float getAttackHighpassFrequency() const {
+        float selectedCap = ATTACK_SWITCH_CAPS[attackPosition] + ATTACK_PARALLEL_CAP;
+        return feedbackLowpassFc(ATTACK_SERIES_R, selectedCap);
+    }
+
 private:
     double sampleRate = 48000.0;
     float drive = 0.5f;
@@ -102,8 +106,11 @@ private:
     static constexpr float TS_FEEDBACK_CAP = 51e-12f;
     static constexpr float SD1_POST_CLIP_LP_FC = 884.0f;
 
-    static constexpr float ATTACK_CAPS[6] = {
-        470e-9f, 220e-9f, 100e-9f, 47e-9f, 22e-9f, 10e-9f
+    // Precision Drive / Nano Attack style: selected cap in the clipping op-amp's reference leg.
+    static constexpr float ATTACK_SERIES_R = 1000.0f;
+    static constexpr float ATTACK_PARALLEL_CAP = 120e-12f;
+    static constexpr float ATTACK_SWITCH_CAPS[6] = {
+        470e-9f, 220e-9f, 100e-9f, 68e-9f, 47e-9f, 33e-9f
     };
 
     // Filter states
