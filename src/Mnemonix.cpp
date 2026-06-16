@@ -49,23 +49,20 @@ struct MnemonixLabelOverlay : TransparentWidget {
             drawLabel(args, Vec(xs[i], 174), "IN", 7.5f, soft);
         }
 
-        drawLabel(args, Vec(55, 216), "CHORUS", 8.f, dark);
-        drawLabel(args, Vec(55, 227), "VIB", 8.f, dark);
-        drawLabel(args, Vec(100, 216), "MODE", 8.f, soft);
-        drawLabel(args, Vec(155, 216), "NORMAL", 8.f, dark);
-        drawLabel(args, Vec(155, 227), "LONG", 8.f, dark);
-        drawLabel(args, Vec(200, 216), "RANGE", 8.f, soft);
-        drawLabel(args, Vec(242, 216), "BYPASS", 8.f, dark);
-        drawLabel(args, Vec(288, 216), "GATE", 8.f, soft);
+        drawLabel(args, Vec(35, 216), "CH/VB", 7.5f, dark);
+        drawLabel(args, Vec(70, 216), "GATE", 7.5f, soft);
+        drawLabel(args, Vec(110, 216), "TRI/SQ", 7.5f, dark);
+        drawLabel(args, Vec(145, 216), "GATE", 7.5f, soft);
+        drawLabel(args, Vec(185, 216), "RANGE", 7.5f, dark);
+        drawLabel(args, Vec(220, 216), "GATE", 7.5f, soft);
+        drawLabel(args, Vec(260, 216), "BYPASS", 7.5f, dark);
+        drawLabel(args, Vec(295, 216), "GATE", 7.5f, soft);
 
-        drawLabel(args, Vec(45, 286), "LVL", 7.5f, blue);
-        drawLabel(args, Vec(85, 286), "BLD", 7.5f, blue);
-        drawLabel(args, Vec(125, 286), "FB", 7.5f, blue);
-        drawLabel(args, Vec(165, 286), "DLY", 7.5f, blue);
-        drawLabel(args, Vec(205, 286), "DPT", 7.5f, blue);
-        drawLabel(args, Vec(250, 286), "MOD", 7.5f, blue);
-        drawLabel(args, Vec(290, 286), "ON", 7.5f, blue);
-        drawLabel(args, Vec(245, 300), "RNG", 7.5f, blue);
+        const char* outLabels[] = {"LVL", "BLD", "FB", "DLY", "DPT", "MOD", "SHP", "RNG", "ON"};
+        const float outXs[] = {30.f, 65.f, 100.f, 135.f, 170.f, 205.f, 240.f, 275.f, 310.f};
+        for (int i = 0; i < 9; ++i) {
+            drawLabel(args, Vec(outXs[i], 286), outLabels[i], 7.f, blue);
+        }
         drawLabel(args, Vec(165, 300), "CONTROL OUTS", 7.5f, soft);
 
         drawLabel(args, Vec(40, 356), "IN", 8.f, dark);
@@ -86,6 +83,7 @@ Mnemonix::Mnemonix() {
     configParam(DELAY_PARAM, 0.f, 1.f, 0.45f, "Delay", "%", 0.f, 100.f);
     configParam(DEPTH_PARAM, 0.f, 1.f, 0.2f, "Depth", "%", 0.f, 100.f);
     configSwitch(MODE_PARAM, 0.f, 1.f, 0.f, "Chorus/Vibrato", {"Chorus", "Vibrato"});
+    configSwitch(SHAPE_PARAM, 0.f, 1.f, 0.f, "LFO shape", {"Triangle", "Square"});
     configSwitch(ENGAGE_PARAM, 0.f, 1.f, 1.f, "Effect", {"Bypassed", "Engaged"});
     configSwitch(LONG_PARAM, 0.f, 1.f, 0.f, "Delay range", {"Normal", "Long"});
 
@@ -102,6 +100,7 @@ Mnemonix::Mnemonix() {
     configInput(DELAY_CV_INPUT, "Delay CV");
     configInput(DEPTH_CV_INPUT, "Depth CV");
     configInput(MODE_CV_INPUT, "Chorus/Vibrato Gate");
+    configInput(SHAPE_CV_INPUT, "LFO Shape Gate");
     configInput(ENGAGE_CV_INPUT, "Engage Gate");
     configInput(LONG_CV_INPUT, "Long Range Gate");
 
@@ -114,6 +113,7 @@ Mnemonix::Mnemonix() {
     configOutput(DELAY_CV_OUTPUT, "Delay CV");
     configOutput(DEPTH_CV_OUTPUT, "Depth CV");
     configOutput(MODE_GATE_OUTPUT, "Chorus/Vibrato Gate");
+    configOutput(SHAPE_GATE_OUTPUT, "LFO Shape Gate");
     configOutput(ENGAGE_GATE_OUTPUT, "Engage Gate");
     configOutput(LONG_GATE_OUTPUT, "Long Range Gate");
 
@@ -142,6 +142,9 @@ void Mnemonix::process(const ProcessArgs& args) {
     dspParams.vibrato = inputs[MODE_CV_INPUT].isConnected()
         ? inputs[MODE_CV_INPUT].getVoltage() >= 1.f
         : params[MODE_PARAM].getValue() >= 0.5f;
+    dspParams.squareLfo = inputs[SHAPE_CV_INPUT].isConnected()
+        ? inputs[SHAPE_CV_INPUT].getVoltage() >= 1.f
+        : params[SHAPE_PARAM].getValue() >= 0.5f;
     dspParams.longDelay = inputs[LONG_CV_INPUT].isConnected()
         ? inputs[LONG_CV_INPUT].getVoltage() >= 1.f
         : params[LONG_PARAM].getValue() >= 0.5f;
@@ -176,12 +179,14 @@ void Mnemonix::process(const ProcessArgs& args) {
     outputs[DELAY_CV_OUTPUT].setVoltage(outputControlVoltage(dspParams.delay));
     outputs[DEPTH_CV_OUTPUT].setVoltage(outputControlVoltage(dspParams.depth));
     outputs[MODE_GATE_OUTPUT].setVoltage(dspParams.vibrato ? 10.f : 0.f);
+    outputs[SHAPE_GATE_OUTPUT].setVoltage(dspParams.squareLfo ? 10.f : 0.f);
     outputs[ENGAGE_GATE_OUTPUT].setVoltage(dspParams.engaged ? 10.f : 0.f);
     outputs[LONG_GATE_OUTPUT].setVoltage(dspParams.longDelay ? 10.f : 0.f);
 
     lights[OVERLOAD_LIGHT].setBrightnessSmooth(overload, args.sampleTime);
     lights[STATUS_LIGHT].setBrightnessSmooth(dspParams.engaged ? 1.f : 0.f, args.sampleTime);
     lights[VIBRATO_LIGHT].setBrightnessSmooth(dspParams.vibrato ? 1.f : 0.f, args.sampleTime);
+    lights[SQUARE_LIGHT].setBrightnessSmooth(dspParams.squareLfo ? 1.f : 0.f, args.sampleTime);
     lights[LONG_LIGHT].setBrightnessSmooth(dspParams.longDelay ? 1.f : 0.f, args.sampleTime);
 }
 
@@ -262,26 +267,31 @@ MnemonixWidget::MnemonixWidget(Mnemonix* module) {
     addInput(createInputCentered<PJ301MPort>(Vec(xs[3], 158), module, Mnemonix::DELAY_CV_INPUT));
     addInput(createInputCentered<PJ301MPort>(Vec(xs[4], 158), module, Mnemonix::DEPTH_CV_INPUT));
 
-    addParam(createParamCentered<CKSS>(Vec(55, 202), module, Mnemonix::MODE_PARAM));
-    addInput(createInputCentered<PJ301MPort>(Vec(100, 202), module, Mnemonix::MODE_CV_INPUT));
-    addParam(createParamCentered<CKSS>(Vec(155, 202), module, Mnemonix::LONG_PARAM));
-    addInput(createInputCentered<PJ301MPort>(Vec(200, 202), module, Mnemonix::LONG_CV_INPUT));
-    addParam(createParamCentered<CKSS>(Vec(242, 202), module, Mnemonix::ENGAGE_PARAM));
-    addInput(createInputCentered<PJ301MPort>(Vec(288, 202), module, Mnemonix::ENGAGE_CV_INPUT));
+    addParam(createParamCentered<CKSS>(Vec(35, 202), module, Mnemonix::MODE_PARAM));
+    addInput(createInputCentered<PJ301MPort>(Vec(70, 202), module, Mnemonix::MODE_CV_INPUT));
+    addParam(createParamCentered<CKSS>(Vec(110, 202), module, Mnemonix::SHAPE_PARAM));
+    addInput(createInputCentered<PJ301MPort>(Vec(145, 202), module, Mnemonix::SHAPE_CV_INPUT));
+    addParam(createParamCentered<CKSS>(Vec(185, 202), module, Mnemonix::LONG_PARAM));
+    addInput(createInputCentered<PJ301MPort>(Vec(220, 202), module, Mnemonix::LONG_CV_INPUT));
+    addParam(createParamCentered<CKSS>(Vec(260, 202), module, Mnemonix::ENGAGE_PARAM));
+    addInput(createInputCentered<PJ301MPort>(Vec(295, 202), module, Mnemonix::ENGAGE_CV_INPUT));
 
-    addChild(createLightCentered<MediumLight<RedLight>>(Vec(35, 226), module, Mnemonix::OVERLOAD_LIGHT));
-    addChild(createLightCentered<SmallLight<YellowLight>>(Vec(116, 226), module, Mnemonix::VIBRATO_LIGHT));
-    addChild(createLightCentered<SmallLight<BlueLight>>(Vec(214, 226), module, Mnemonix::LONG_LIGHT));
-    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(302, 226), module, Mnemonix::STATUS_LIGHT));
+    addChild(createLightCentered<MediumLight<RedLight>>(Vec(25, 226), module, Mnemonix::OVERLOAD_LIGHT));
+    addChild(createLightCentered<SmallLight<YellowLight>>(Vec(86, 226), module, Mnemonix::VIBRATO_LIGHT));
+    addChild(createLightCentered<SmallLight<YellowLight>>(Vec(160, 226), module, Mnemonix::SQUARE_LIGHT));
+    addChild(createLightCentered<SmallLight<BlueLight>>(Vec(235, 226), module, Mnemonix::LONG_LIGHT));
+    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(310, 226), module, Mnemonix::STATUS_LIGHT));
 
-    addOutput(createOutputCentered<PJ301MPort>(Vec(45, 268), module, Mnemonix::LEVEL_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(85, 268), module, Mnemonix::BLEND_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(125, 268), module, Mnemonix::FEEDBACK_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(165, 268), module, Mnemonix::DELAY_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(205, 268), module, Mnemonix::DEPTH_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(250, 268), module, Mnemonix::MODE_GATE_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(290, 268), module, Mnemonix::ENGAGE_GATE_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(245, 318), module, Mnemonix::LONG_GATE_OUTPUT));
+    const float outXs[] = {30.f, 65.f, 100.f, 135.f, 170.f, 205.f, 240.f, 275.f, 310.f};
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[0], 268), module, Mnemonix::LEVEL_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[1], 268), module, Mnemonix::BLEND_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[2], 268), module, Mnemonix::FEEDBACK_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[3], 268), module, Mnemonix::DELAY_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[4], 268), module, Mnemonix::DEPTH_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[5], 268), module, Mnemonix::MODE_GATE_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[6], 268), module, Mnemonix::SHAPE_GATE_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[7], 268), module, Mnemonix::LONG_GATE_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[8], 268), module, Mnemonix::ENGAGE_GATE_OUTPUT));
 
     addInput(createInputCentered<PJ301MPort>(Vec(40, 334), module, Mnemonix::AUDIO_INPUT));
     addOutput(createOutputCentered<PJ301MPort>(Vec(105, 334), module, Mnemonix::DIRECT_OUTPUT));

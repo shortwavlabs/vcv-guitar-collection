@@ -30,6 +30,7 @@ public:
         float delay = 0.45f;
         float depth = 0.2f;
         bool vibrato = false;
+        bool squareLfo = false;
         bool longDelay = false;
         bool engaged = true;
         int artifactProfile = ARTIFACT_AUTHENTIC;
@@ -130,7 +131,7 @@ public:
         const float artifact = artifactAmount(p.artifactProfile);
         const float maxClockPeriodUs = p.longDelay ? kLongMaxClockPeriodUs : kMaxClockPeriodUs;
         const float basePeriodUs = clockPeriodUsForDelay(smoothedDelay, p.longDelay);
-        const float lfo = advanceLfo(p.vibrato);
+        const float lfo = advanceLfo(p.vibrato, p.squareLfo);
         const float maxMod = p.vibrato ? 0.18f : 0.085f;
         float periodUs = basePeriodUs * (1.f + lfo * maxMod * smoothedDepth);
         periodUs = clampf(periodUs, kMinClockPeriodUs * 0.65f, maxClockPeriodUs * 1.35f);
@@ -657,14 +658,20 @@ private:
         return 1.f - std::exp(-1.f / (sampleRate * ms * 0.001f));
     }
 
-    float advanceLfo(bool vibrato) {
+    float advanceLfo(bool vibrato, bool squareLfo) {
         const float lfoRate = vibrato ? 1.65f : 0.35f;
         lfoPhase += lfoRate * sampleTime;
         if (lfoPhase >= 1.f) {
             lfoPhase -= std::floor(lfoPhase);
         }
+
+        if (squareLfo) {
+            return lfoPhase < 0.5f ? 1.f : -1.f;
+        }
+
+        const float triangle = 1.f - 4.f * std::fabs(lfoPhase - 0.5f);
         const float phase = 2.f * static_cast<float>(M_PI) * lfoPhase;
-        return std::sin(phase) + 0.08f * std::sin(2.f * phase + 0.6f);
+        return clampf(triangle + 0.04f * std::sin(2.f * phase + 0.6f), -1.f, 1.f);
     }
 
     void clockBbd(float bbdDrive, float clockHz, float artifact, float delayNorm) {

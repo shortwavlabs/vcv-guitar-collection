@@ -74,6 +74,7 @@ Visual design should follow Shortwav Labs branding rather than imitating the ori
 - `Delay`: BBD clock/delay time. Map to the CD4047 clock period, not directly to a clean delay time.
 - `Depth`: LFO modulation depth into the clock-control path, matching `P5`.
 - `Chorus/Vibrato`: two-position switch matching `S2`.
+- `LFO Shape`: `Triangle/Square` switch inspired by the Memory Boy modulation option.
 - `Range`: `Normal/Long` switch. Normal preserves the Rev_D schematic range; Long doubles the maximum clock period for extended delay.
 - `Bypass`: optional Rack button mirroring the footswitch; also call `configBypass(AUDIO_INPUT, AUDIO_OUTPUT)`.
 
@@ -98,6 +99,7 @@ Expose circuit calibration as context-menu items or hidden trim parameters, not 
 - `Blend CV` with attenuverter.
 - `Depth CV` with attenuverter.
 - `Chorus/Vibrato Gate/CV` input for switching modes.
+- `LFO Shape Gate/CV` input for triangle/square modulation.
 - `Range Gate/CV` input for normal/long delay range.
 - `Bypass Gate/CV`.
 
@@ -112,6 +114,7 @@ Expose circuit calibration as context-menu items or hidden trim parameters, not 
 - `Delay CV Out`: final post-CV delay/clock control value.
 - `Depth CV Out`: final post-CV modulation-depth control value.
 - `Chorus/Vibrato Gate Out`: low for chorus, high for vibrato.
+- `LFO Shape Gate Out`: low for triangle, high for square.
 - `Range Gate Out`: low for normal range, high for long range.
 - `Bypass Gate Out`: low for bypassed, high for engaged.
 
@@ -250,6 +253,7 @@ The post-BBD filters should be the main reason repeats lose top end. The clock-t
 ### Chorus/Vibrato
 
 - The LFO is fixed-rate with depth control, not a fully user-variable modulation oscillator.
+- LFO shape is switchable between triangle and square. Triangle is the default pedal-style sweep; square intentionally creates stepped clock changes like the Memory Boy option.
 - Use two rate modes matching the switch:
   - `Chorus`: slow mode, start around `0.3-0.4 Hz`.
   - `Vibrato`: faster mode, start around `1.4-1.8 Hz`.

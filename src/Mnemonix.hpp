@@ -13,6 +13,7 @@ struct Mnemonix : Module {
         DELAY_PARAM,
         DEPTH_PARAM,
         MODE_PARAM,
+        SHAPE_PARAM,
         ENGAGE_PARAM,
         LONG_PARAM,
         LEVEL_CV_ATT_PARAM,
@@ -31,6 +32,7 @@ struct Mnemonix : Module {
         DELAY_CV_INPUT,
         DEPTH_CV_INPUT,
         MODE_CV_INPUT,
+        SHAPE_CV_INPUT,
         ENGAGE_CV_INPUT,
         LONG_CV_INPUT,
         INPUTS_LEN
@@ -46,6 +48,7 @@ struct Mnemonix : Module {
         DELAY_CV_OUTPUT,
         DEPTH_CV_OUTPUT,
         MODE_GATE_OUTPUT,
+        SHAPE_GATE_OUTPUT,
         ENGAGE_GATE_OUTPUT,
         LONG_GATE_OUTPUT,
         OUTPUTS_LEN
@@ -55,6 +58,7 @@ struct Mnemonix : Module {
         OVERLOAD_LIGHT,
         STATUS_LIGHT,
         VIBRATO_LIGHT,
+        SQUARE_LIGHT,
         LONG_LIGHT,
         LIGHTS_LEN
     };

@@ -1280,6 +1280,38 @@ namespace TestSuite
     }
   }
 
+  void test_mnemonix_lfo_shape_modes(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP LFO shape modes...\n");
+
+    MnemonixDSP triangleDsp;
+    MnemonixDSP squareDsp;
+    triangleDsp.setSampleRate(48000.f);
+    squareDsp.setSampleRate(48000.f);
+
+    MnemonixDSP::Params triangleParams;
+    triangleParams.delay = 0.5f;
+    triangleParams.depth = 1.f;
+    triangleParams.vibrato = true;
+    triangleParams.squareLfo = false;
+
+    MnemonixDSP::Params squareParams = triangleParams;
+    squareParams.squareLfo = true;
+
+    float accumulatedClockDifference = 0.f;
+    for (int i = 0; i < 4096; ++i) {
+      const MnemonixDSP::Result triangle = triangleDsp.process(0.f, triangleParams);
+      const MnemonixDSP::Result square = squareDsp.process(0.f, squareParams);
+      T_ASSERT(ctx, std::isfinite(triangle.output));
+      T_ASSERT(ctx, std::isfinite(square.output));
+      T_ASSERT(ctx, std::isfinite(triangle.clockHz));
+      T_ASSERT(ctx, std::isfinite(square.clockHz));
+      accumulatedClockDifference += std::fabs(triangle.clockHz - square.clockHz);
+    }
+
+    T_ASSERT(ctx, accumulatedClockDifference > 1000.f);
+  }
+
   //------------------------------------------------------------------------------
   // Test Runner
   //------------------------------------------------------------------------------
@@ -1347,6 +1379,7 @@ namespace TestSuite
     test_mnemonix_dsp_stability(ctx);
     test_mnemonix_reset(ctx);
     test_mnemonix_sample_rate_changes(ctx);
+    test_mnemonix_lfo_shape_modes(ctx);
 
     std::printf("\n");
     ctx.summary();
