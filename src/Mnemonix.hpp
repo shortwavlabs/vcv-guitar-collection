@@ -56,7 +56,8 @@ struct Mnemonix : Module {
     };
 
     std::array<MnemonixDSP, 16> engines;
-    float currentSampleRate = 48000.f;
+    float currentSampleRate = 0.f;
+    bool sampleRateInitialized = false;
     int artifactProfile = MnemonixDSP::ARTIFACT_AUTHENTIC;
 
     Mnemonix();
@@ -68,10 +69,10 @@ struct Mnemonix : Module {
 
     void resetEngines();
     void setArtifactProfile(int profile);
+    void setEngineSampleRate(float sampleRate);
 };
 
 struct MnemonixWidget : ModuleWidget {
     MnemonixWidget(Mnemonix* module);
     void appendContextMenu(Menu* menu) override;
 };
-

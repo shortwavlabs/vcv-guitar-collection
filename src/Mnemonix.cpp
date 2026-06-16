@@ -20,6 +20,10 @@ float outputControlVoltage(float value) {
     return finiteClamp(value, 0.f, 1.f) * 10.f;
 }
 
+bool isUsableSampleRate(float sampleRate) {
+    return std::isfinite(sampleRate) && sampleRate >= 8000.f;
+}
+
 struct MnemonixLabelOverlay : TransparentWidget {
     void drawLabel(const DrawArgs& args, Vec pos, const char* text, float size = 9.f, NVGcolor color = nvgRGB(28, 28, 30)) {
         nvgFontFaceId(args.vg, APP->window->uiFont->handle);
@@ -107,19 +111,10 @@ Mnemonix::Mnemonix() {
     configOutput(ENGAGE_GATE_OUTPUT, "Engage Gate");
 
     configBypass(AUDIO_INPUT, AUDIO_OUTPUT);
-
-    for (auto& engine : engines) {
-        engine.setSampleRate(currentSampleRate);
-    }
 }
 
 void Mnemonix::process(const ProcessArgs& args) {
-    if (std::fabs(args.sampleRate - currentSampleRate) > 1.f) {
-        currentSampleRate = args.sampleRate;
-        for (auto& engine : engines) {
-            engine.setSampleRate(currentSampleRate);
-        }
-    }
+    setEngineSampleRate(args.sampleRate);
 
     MnemonixDSP::Params dspParams;
     dspParams.level = applyCv(params[LEVEL_PARAM].getValue(),
@@ -179,10 +174,7 @@ void Mnemonix::process(const ProcessArgs& args) {
 }
 
 void Mnemonix::onSampleRateChange(const SampleRateChangeEvent& e) {
-    currentSampleRate = e.sampleRate;
-    for (auto& engine : engines) {
-        engine.setSampleRate(currentSampleRate);
-    }
+    setEngineSampleRate(e.sampleRate);
 }
 
 json_t* Mnemonix::dataToJson() {
@@ -209,6 +201,22 @@ void Mnemonix::setArtifactProfile(int profile) {
         profile = MnemonixDSP::ARTIFACT_AUTHENTIC;
     }
     artifactProfile = profile;
+}
+
+void Mnemonix::setEngineSampleRate(float sampleRate) {
+    if (!isUsableSampleRate(sampleRate)) {
+        return;
+    }
+
+    if (sampleRateInitialized && std::fabs(sampleRate - currentSampleRate) < 0.01f) {
+        return;
+    }
+
+    currentSampleRate = sampleRate;
+    sampleRateInitialized = true;
+    for (auto& engine : engines) {
+        engine.setSampleRate(currentSampleRate);
+    }
 }
 
 MnemonixWidget::MnemonixWidget(Mnemonix* module) {
@@ -299,4 +307,3 @@ void MnemonixWidget::appendContextMenu(Menu* menu) {
 }
 
 Model* modelMnemonix = createModel<Mnemonix, MnemonixWidget>("Mnemonix");
-

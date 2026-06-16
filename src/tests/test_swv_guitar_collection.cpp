@@ -1244,6 +1244,39 @@ namespace TestSuite
     }
   }
 
+  void test_mnemonix_sample_rate_changes(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP sample rate changes...\n");
+
+    MnemonixDSP dsp;
+    MnemonixDSP::Params params;
+    params.level = 0.65f;
+    params.blend = 0.55f;
+    params.feedback = 0.45f;
+    params.delay = 0.5f;
+    params.depth = 0.35f;
+    params.engaged = true;
+
+    const float sampleRates[] = {44100.f, 48000.f, 88200.f, 96000.f, 192000.f};
+    for (float sampleRate : sampleRates) {
+      dsp.setSampleRate(sampleRate);
+      T_ASSERT_NEAR(ctx, dsp.getSampleRate(), sampleRate, 1e-4f);
+
+      MnemonixDSP::Result last;
+      for (int i = 0; i < 4096; ++i) {
+        const float input = 0.2f * std::sin(2.f * M_PI * 440.f * i / sampleRate);
+        last = dsp.process(input, params);
+        T_ASSERT(ctx, std::isfinite(last.output));
+        T_ASSERT(ctx, std::isfinite(last.wet));
+        T_ASSERT(ctx, std::isfinite(last.clockHz));
+      }
+
+      T_ASSERT(ctx, last.clockHz > 9000.f);
+      T_ASSERT(ctx, last.delaySeconds > 0.03f);
+      T_ASSERT(ctx, last.delaySeconds < 0.42f);
+    }
+  }
+
   //------------------------------------------------------------------------------
   // Test Runner
   //------------------------------------------------------------------------------
@@ -1310,6 +1343,7 @@ namespace TestSuite
     test_mnemonix_bypass_direct(ctx);
     test_mnemonix_dsp_stability(ctx);
     test_mnemonix_reset(ctx);
+    test_mnemonix_sample_rate_changes(ctx);
 
     std::printf("\n");
     ctx.summary();
