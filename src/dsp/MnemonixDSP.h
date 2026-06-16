@@ -149,11 +149,11 @@ public:
 
         const float inputGain = 0.055f + 3.25f * std::pow(clampf(smoothedLevel, 0.f, 1.f), 2.08f);
         const float feedbackReturn = feedbackAmp.process(feedbackState * feedbackGain(smoothedFeedback));
-        float preamp = inputFilters.process(input * inputGain + feedbackReturn);
+        float preamp = inputFilters.process(input * inputGain);
         preamp = inputAmp.process(preamp);
         updateOverload(preamp);
 
-        float compressed = compander.compress(preamp);
+        float compressed = compander.compress(preamp + feedbackReturn);
         float bbdDrive = preBbdFilters.process(compressed);
         bbdDrive = bbdDriverAmp.process(bbdDrive);
 
@@ -173,8 +173,12 @@ public:
         const float feedbackDamping = 1.f - 0.13f * artifact * delayNorm;
         feedbackState = softLimit(post * feedbackDamping, 1.8f);
 
+        const float dry = preamp;
         const float wet = post;
-        const float mixed = input * (1.f - smoothedBlend) + wet * smoothedBlend;
+        float dryGain = 0.f;
+        float wetGain = 0.f;
+        blendGains(smoothedBlend, dryGain, wetGain);
+        const float mixed = dry * dryGain + wet * wetGain;
         float output = outputAmp.process(mixed);
         if (!p.engaged) {
             output = input;
@@ -228,6 +232,8 @@ private:
     static const int kBbdDelayTicks = 4096;
     static const int kDelayBufferSize = 8192;
     static const int kDelayBufferMask = kDelayBufferSize - 1;
+    static constexpr float kWetMixMakeup = 2.02f;
+    static constexpr float kBlendCenterMakeup = 0.17f;
 
     class Biquad {
     public:
@@ -748,6 +754,15 @@ private:
             gain += (feedback - 0.78f) * 0.34f;
         }
         return gain;
+    }
+
+    static void blendGains(float blend, float& dryGain, float& wetGain) {
+        blend = clampf(sanitize(blend), 0.f, 1.f);
+        const float angle = blend * 0.5f * static_cast<float>(M_PI);
+        const float center = std::sin(blend * static_cast<float>(M_PI));
+        const float loudnessMakeup = 1.f + kBlendCenterMakeup * center;
+        dryGain = std::cos(angle) * loudnessMakeup;
+        wetGain = std::sin(angle) * kWetMixMakeup * loudnessMakeup;
     }
 
     static float softLimit(float x, float limit) {

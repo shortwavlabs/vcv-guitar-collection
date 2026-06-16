@@ -69,7 +69,7 @@ Visual design should follow Shortwav Labs branding rather than imitating the ori
 ### Parameters
 
 - `Level`: input drive into the modeled preamp/compander. Log taper like `P1`.
-- `Blend`: dry/wet mix. Center equals nominal unity dry and wet, matching the manual.
+- `Blend`: calibrated dry/wet mix. Use the modeled internal dry tap with wet-return makeup and an equal-power contour so perceived level stays stable across the sweep.
 - `Feedback`: wet feedback return amount. Log taper like `P3`; allow self-oscillation above roughly 75 percent.
 - `Delay`: BBD clock/delay time. Map to the CD4047 clock period, not directly to a clean delay time.
 - `Depth`: LFO modulation depth into the clock-control path, matching `P5`.
@@ -139,7 +139,7 @@ Control outputs should make the module patchable as a modulation source without 
 | `U10A`, `U10B`, `P5`, `S2`, `C37`, `C38` | Chorus/vibrato LFO | Fixed-rate analog LFO model; chorus uses slower capacitor path, vibrato faster. Depth scales clock modulation |
 | `U8`, `U3`, post-BBD RC networks | Reconstruction filtering, gain recovery, de-emphasis | Cascaded active lowpass/highpass filters with component-derived cutoff targets and 4558 saturation |
 | `P3` feedback network | Repeat feedback and self-oscillation | Feed post-reconstruction wet signal back before/around compander input; include nonlinear limiting and tone loss per repeat |
-| `P2`, output stages | Wet/dry blend and final output | Equal-power or calibrated linear dry/wet blend, output recovery coloration, final finite guard |
+| `P2`, output stages | Wet/dry blend and final output | Calibrated equal-power dry/wet blend, wet-return makeup, output recovery coloration, final finite guard |
 
 ## DSP Architecture
 

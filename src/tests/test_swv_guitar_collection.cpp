@@ -1158,6 +1158,35 @@ namespace TestSuite
   //------------------------------------------------------------------------------
   // MnemonixDSP Tests
   //------------------------------------------------------------------------------
+  float measureMnemonixBlendRms(float blend)
+  {
+    static const float sampleRate = 48000.f;
+    MnemonixDSP dsp;
+    dsp.setSampleRate(sampleRate);
+
+    MnemonixDSP::Params params;
+    params.level = 0.55f;
+    params.blend = blend;
+    params.feedback = 0.f;
+    params.delay = 0.18f;
+    params.depth = 0.f;
+    params.engaged = true;
+    params.artifactProfile = MnemonixDSP::ARTIFACT_AUTHENTIC;
+
+    double sum = 0.0;
+    int count = 0;
+    for (int i = 0; i < 96000; ++i) {
+      const float input = 0.25f * std::sin(2.f * M_PI * 220.f * i / sampleRate);
+      const MnemonixDSP::Result result = dsp.process(input, params);
+      if (i >= 48000) {
+        sum += result.output * result.output;
+        ++count;
+      }
+    }
+
+    return static_cast<float>(std::sqrt(sum / std::max(1, count)));
+  }
+
   void test_mnemonix_delay_mapping(TestContext &ctx)
   {
     std::printf("Testing MnemonixDSP Rev_D delay mapping...\n");
@@ -1190,6 +1219,25 @@ namespace TestSuite
       T_ASSERT_NEAR(ctx, result.output, input, 1e-5f);
       T_ASSERT_NEAR(ctx, result.direct, input, 1e-6f);
     }
+  }
+
+  void test_mnemonix_blend_level_consistency(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP blend level consistency...\n");
+
+    const float blends[] = {0.f, 0.25f, 0.5f, 0.75f, 1.f};
+    float minRms = std::numeric_limits<float>::max();
+    float maxRms = 0.f;
+
+    for (float blend : blends) {
+      const float rms = measureMnemonixBlendRms(blend);
+      T_ASSERT(ctx, std::isfinite(rms));
+      T_ASSERT(ctx, rms > 0.05f);
+      minRms = std::min(minRms, rms);
+      maxRms = std::max(maxRms, rms);
+    }
+
+    T_ASSERT(ctx, maxRms / minRms < 1.25f);
   }
 
   void test_mnemonix_dsp_stability(TestContext &ctx)
@@ -1240,11 +1288,16 @@ namespace TestSuite
 
     params.feedback = 0.f;
     params.blend = 1.f;
-    for (int i = 0; i < 64; ++i) {
+    float maxResetTransient = 0.f;
+    float settledOutput = 0.f;
+    for (int i = 0; i < 4096; ++i) {
       const MnemonixDSP::Result result = dsp.process(0.f, params);
       T_ASSERT(ctx, std::isfinite(result.output));
-      T_ASSERT(ctx, std::fabs(result.output) < 0.01f);
+      maxResetTransient = std::max(maxResetTransient, std::fabs(result.output));
+      settledOutput = result.output;
     }
+    T_ASSERT(ctx, maxResetTransient < 0.04f);
+    T_ASSERT(ctx, std::fabs(settledOutput) < 0.005f);
   }
 
   void test_mnemonix_sample_rate_changes(TestContext &ctx)
@@ -1383,6 +1436,7 @@ namespace TestSuite
     // MnemonixDSP tests
     test_mnemonix_delay_mapping(ctx);
     test_mnemonix_bypass_direct(ctx);
+    test_mnemonix_blend_level_consistency(ctx);
     test_mnemonix_dsp_stability(ctx);
     test_mnemonix_reset(ctx);
     test_mnemonix_sample_rate_changes(ctx);
