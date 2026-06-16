@@ -4,7 +4,7 @@
 
 Create `Mnemonix`, a VCV Rack v2 module that faithfully recreates the attached Deluxe Memory Man Rev_D MN3008 schematic with chorus/vibrato. Treat the schematic, not a generic "classic Memory Man" memory-delay idea, as the implementation authority.
 
-The goal is not just "a delay with modulation." The module should preserve the Rev_D circuit personality: level-dependent drive, compander behavior, dark clock-limited repeats, BBD noise and clock artifacts, feedback that can bloom into oscillation, delay-time pitch slews, and the fixed-rate chorus/vibrato modulation path. Authenticity is preferred over cleanliness by default.
+The goal is not just "a delay with modulation." The module should preserve the Rev_D circuit personality: level-dependent drive, compander behavior, dark clock-limited repeats, BBD noise and clock artifacts, feedback that can bloom into oscillation, delay-time pitch slews, and the delay-controlled chorus/vibrato modulation path. Authenticity is preferred over cleanliness by default.
 
 Use a topology-aware DSP model rather than a generic clean delay. Keep all DSP code independent of Rack headers, with the Rack `Module` acting only as the voltage/control wrapper.
 
@@ -71,7 +71,7 @@ Visual design should follow Shortwav Labs branding rather than imitating the ori
 - `Level`: input drive into the modeled preamp/compander. Log taper like `P1`.
 - `Blend`: calibrated dry/wet mix. Use the modeled internal dry tap with wet-return makeup and an equal-power contour so perceived level stays stable across the sweep.
 - `Feedback`: wet feedback return amount. Log taper like `P3`; allow self-oscillation above roughly 75 percent.
-- `Delay`: BBD clock/delay time. Map to the CD4047 clock period, not directly to a clean delay time.
+- `Delay`: BBD clock/delay time and chorus/vibrato LFO rate. Map to the CD4047 clock period, not directly to a clean delay time; shorter delay settings sweep the LFO faster and longer delay settings slow it down.
 - `Depth`: LFO modulation depth into the clock-control path, matching `P5`.
 - `Chorus/Vibrato`: two-position switch matching `S2`.
 - `LFO Shape`: `Triangle/Square` switch inspired by the Memory Boy modulation option.
@@ -252,11 +252,11 @@ The post-BBD filters should be the main reason repeats lose top end. The clock-t
 
 ### Chorus/Vibrato
 
-- The LFO is fixed-rate with depth control, not a fully user-variable modulation oscillator.
+- The LFO rate follows the smoothed `Delay` control, so delay knob movement changes both BBD clock time and chorus/vibrato sweep speed.
 - LFO shape is switchable between triangle and square. Triangle is the default pedal-style sweep; square intentionally creates stepped clock changes like the Memory Boy option.
 - Use two rate modes matching the switch:
-  - `Chorus`: slow mode, start around `0.3-0.4 Hz`.
-  - `Vibrato`: faster mode, start around `1.4-1.8 Hz`.
+  - `Chorus`: slow mode, about `0.35 Hz` near mid delay.
+  - `Vibrato`: faster mode, about `1.65 Hz` near mid delay.
 - Preserve the schematic capacitor ratio (`2.2uF / 0.47uF`, about 4.7x) when setting the initial rates.
 - Modulate the BBD clock period/frequency, not the final delay output directly.
 - Blend determines whether the result is chorus-like dry+wet or vibrato-like mostly wet, matching how the pedal is used.
@@ -327,7 +327,7 @@ The default artifact profile should be authentically noisy and alive rather than
 
 ### Phase 6: Chorus/Vibrato
 
-- Implement analog LFO with `Chorus` and `Vibrato` rate modes.
+- Implement analog LFO with `Chorus` and `Vibrato` rate modes, both scaled by the `Delay` control.
 - Modulate clock control.
 - Tune depth range so high depth produces recognizable warble without breaking delay stability.
 - Verify manual behaviors: rich chorus at short delay/center blend/high feedback/high depth; vibrato pitch shift on delayed signal.
@@ -402,7 +402,7 @@ Manual verification patches:
 - Short and long delay settings have clearly different bandwidth/noise behavior.
 - Delay knob movement produces analog-style pitch slews.
 - Feedback can self-oscillate musically without numerical failure.
-- Chorus/vibrato switch changes modulation rate and feel.
+- Chorus/vibrato switch changes modulation rate and feel, while the `Delay` control scales the selected LFO rate.
 - Overload and status LEDs match the manual's operating guidance.
 - Direct out remains dry.
 - Every front-panel user control has CV input and control-voltage output support.

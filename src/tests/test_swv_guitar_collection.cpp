@@ -1372,6 +1372,58 @@ namespace TestSuite
     T_ASSERT(ctx, accumulatedLfoDifference > 100.f);
   }
 
+  void test_mnemonix_delay_controls_lfo_rate(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP delay controls LFO rate...\n");
+
+    const float shortChorus = MnemonixDSP::lfoRateHzForDelay(0.f, false);
+    const float midChorus = MnemonixDSP::lfoRateHzForDelay(0.5f, false);
+    const float longChorus = MnemonixDSP::lfoRateHzForDelay(1.f, false);
+    const float shortVibrato = MnemonixDSP::lfoRateHzForDelay(0.f, true);
+    const float midVibrato = MnemonixDSP::lfoRateHzForDelay(0.5f, true);
+    const float longVibrato = MnemonixDSP::lfoRateHzForDelay(1.f, true);
+
+    T_ASSERT(ctx, shortChorus > midChorus);
+    T_ASSERT(ctx, midChorus > longChorus);
+    T_ASSERT(ctx, shortVibrato > midVibrato);
+    T_ASSERT(ctx, midVibrato > longVibrato);
+    T_ASSERT(ctx, midVibrato > midChorus * 4.f);
+
+    MnemonixDSP shortDelayDsp;
+    MnemonixDSP longDelayDsp;
+    shortDelayDsp.setSampleRate(48000.f);
+    longDelayDsp.setSampleRate(48000.f);
+
+    MnemonixDSP::Params shortParams;
+    shortParams.delay = 0.f;
+    shortParams.depth = 0.f;
+    shortParams.vibrato = true;
+    shortParams.squareLfo = true;
+    shortParams.feedback = 0.f;
+
+    MnemonixDSP::Params longParams = shortParams;
+    longParams.delay = 1.f;
+
+    int shortEdges = 0;
+    int longEdges = 0;
+    float previousShort = shortDelayDsp.process(0.f, shortParams).lfo;
+    float previousLong = longDelayDsp.process(0.f, longParams).lfo;
+    for (int i = 0; i < 240000; ++i) {
+      const float shortLfo = shortDelayDsp.process(0.f, shortParams).lfo;
+      const float longLfo = longDelayDsp.process(0.f, longParams).lfo;
+      if ((previousShort < 0.f && shortLfo >= 0.f) || (previousShort >= 0.f && shortLfo < 0.f)) {
+        ++shortEdges;
+      }
+      if ((previousLong < 0.f && longLfo >= 0.f) || (previousLong >= 0.f && longLfo < 0.f)) {
+        ++longEdges;
+      }
+      previousShort = shortLfo;
+      previousLong = longLfo;
+    }
+
+    T_ASSERT(ctx, shortEdges > longEdges);
+  }
+
   //------------------------------------------------------------------------------
   // Test Runner
   //------------------------------------------------------------------------------
@@ -1441,6 +1493,7 @@ namespace TestSuite
     test_mnemonix_reset(ctx);
     test_mnemonix_sample_rate_changes(ctx);
     test_mnemonix_lfo_shape_modes(ctx);
+    test_mnemonix_delay_controls_lfo_rate(ctx);
 
     std::printf("\n");
     ctx.summary();

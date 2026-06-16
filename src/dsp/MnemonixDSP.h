@@ -132,7 +132,7 @@ public:
         const float artifact = artifactAmount(p.artifactProfile);
         const float maxClockPeriodUs = p.longDelay ? kLongMaxClockPeriodUs : kMaxClockPeriodUs;
         const float basePeriodUs = clockPeriodUsForDelay(smoothedDelay, p.longDelay);
-        const float lfo = advanceLfo(p.vibrato, p.squareLfo);
+        const float lfo = advanceLfo(p.vibrato, p.squareLfo, smoothedDelay);
         const float maxMod = p.vibrato ? 0.18f : 0.085f;
         float periodUs = basePeriodUs * (1.f + lfo * maxMod * smoothedDepth);
         periodUs = clampf(periodUs, kMinClockPeriodUs * 0.65f, maxClockPeriodUs * 1.35f);
@@ -225,6 +225,13 @@ public:
         return bbdDelaySecondsForClockPeriodUs(clockPeriodUsForDelay(delayNorm, longDelay));
     }
 
+    static float lfoRateHzForDelay(float delayNorm, bool vibrato) {
+        delayNorm = clampf(sanitize(delayNorm), 0.f, 1.f);
+        const float baseRate = vibrato ? kVibratoMidLfoHz : kChorusMidLfoHz;
+        const float delayScale = std::pow(2.f, (0.5f - delayNorm) * kDelayToLfoOctaves);
+        return clampf(baseRate * delayScale, 0.05f, 6.f);
+    }
+
 private:
     static constexpr float kMinClockPeriodUs = 8.f;
     static constexpr float kMaxClockPeriodUs = 100.f;
@@ -234,6 +241,9 @@ private:
     static const int kDelayBufferMask = kDelayBufferSize - 1;
     static constexpr float kWetMixMakeup = 2.02f;
     static constexpr float kBlendCenterMakeup = 0.17f;
+    static constexpr float kChorusMidLfoHz = 0.35f;
+    static constexpr float kVibratoMidLfoHz = 1.65f;
+    static constexpr float kDelayToLfoOctaves = 1.3f;
 
     class Biquad {
     public:
@@ -666,8 +676,8 @@ private:
         return 1.f - std::exp(-1.f / (sampleRate * ms * 0.001f));
     }
 
-    float advanceLfo(bool vibrato, bool squareLfo) {
-        const float lfoRate = vibrato ? 1.65f : 0.35f;
+    float advanceLfo(bool vibrato, bool squareLfo, float delayNorm) {
+        const float lfoRate = lfoRateHzForDelay(delayNorm, vibrato);
         lfoPhase += lfoRate * sampleTime;
         if (lfoPhase >= 1.f) {
             lfoPhase -= std::floor(lfoPhase);
