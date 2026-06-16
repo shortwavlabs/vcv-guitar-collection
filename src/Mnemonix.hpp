@@ -35,6 +35,7 @@ struct Mnemonix : Module {
         SHAPE_CV_INPUT,
         ENGAGE_CV_INPUT,
         LONG_CV_INPUT,
+        TAP_CV_INPUT,
         INPUTS_LEN
     };
 
@@ -51,7 +52,38 @@ struct Mnemonix : Module {
         SHAPE_LFO_OUTPUT,
         ENGAGE_GATE_OUTPUT,
         LONG_GATE_OUTPUT,
+        CLOCK_GATE_OUTPUT,
+        CLOCK_DIV_OUTPUT,
+        ENVELOPE_CV_OUTPUT,
         OUTPUTS_LEN
+    };
+
+    enum BypassBehavior {
+        BYPASS_TRAILS = 0,
+        BYPASS_CPU_MUTE = 1
+    };
+
+    enum TimingMode {
+        TIMING_FREE = 0,
+        TIMING_SYNC = 1
+    };
+
+    enum SyncDivision {
+        SYNC_WHOLE = 0,
+        SYNC_HALF,
+        SYNC_DOTTED_QUARTER,
+        SYNC_QUARTER,
+        SYNC_DOTTED_EIGHTH,
+        SYNC_EIGHTH,
+        SYNC_EIGHTH_TRIPLET,
+        SYNC_SIXTEENTH,
+        SYNC_DIVISIONS_LEN
+    };
+
+    enum StereoMode {
+        STEREO_MONO = 0,
+        STEREO_WIDE,
+        STEREO_PING_PONG
     };
 
     enum LightId {
@@ -67,6 +99,22 @@ struct Mnemonix : Module {
     float currentSampleRate = 0.f;
     bool sampleRateInitialized = false;
     int artifactProfile = MnemonixDSP::ARTIFACT_AUTHENTIC;
+    int bypassBehavior = BYPASS_TRAILS;
+    int timingMode = TIMING_FREE;
+    int syncDivision = SYNC_QUARTER;
+    int stereoMode = STEREO_MONO;
+    float tapTempoSeconds = 0.5f;
+    float tapTimerSeconds = 0.f;
+    bool previousEngaged = true;
+    dsp::SchmittTrigger tapTrigger;
+
+    float inputGainTrim = 1.f;
+    float bbdBiasTrim = 1.f;
+    float clockBleedTrim = 1.f;
+    float companderTrim = 1.f;
+    float noiseTrim = 1.f;
+    float wetMakeupTrim = 1.f;
+    float feedbackHeadroomTrim = 1.f;
 
     Mnemonix();
 
@@ -78,6 +126,7 @@ struct Mnemonix : Module {
     void resetEngines();
     void setArtifactProfile(int profile);
     void setEngineSampleRate(float sampleRate);
+    float getSyncedDelayNorm(bool longDelay) const;
 };
 
 struct MnemonixWidget : ModuleWidget {

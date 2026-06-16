@@ -77,6 +77,8 @@ Visual design should follow Shortwav Labs branding rather than imitating the ori
 - `LFO Shape`: `Triangle/Square` switch inspired by the Memory Boy modulation option.
 - `Range`: `Normal/Long` switch. Normal preserves the Rev_D schematic range; Long doubles the maximum clock period for extended delay.
 - `Bypass`: optional Rack button mirroring the footswitch; also call `configBypass(AUDIO_INPUT, AUDIO_OUTPUT)`.
+- Context timing mode: free delay knob or tap/sync divisions seeded from the tap gate input.
+- Context stereo mode: mono pedal, wide chorus, or ping-pong-offset polyphonic stereo expansion for mono input.
 
 ### Trims / Context Menu
 
@@ -89,6 +91,9 @@ Expose circuit calibration as context-menu items or hidden trim parameters, not 
 - Feedback headroom trim.
 - Noise/artifact amount: ideal, nominal, worn.
 - Delay calibration: schematic clock range vs extended range.
+- CPU bypass behavior: trails or CPU mute.
+- Tempo division and tap tempo seed.
+- Stereo expansion mode.
 
 ### Inputs
 
@@ -102,6 +107,7 @@ Expose circuit calibration as context-menu items or hidden trim parameters, not 
 - `LFO Shape Gate/CV` input for triangle/square modulation.
 - `Range Gate/CV` input for normal/long delay range.
 - `Bypass Gate/CV`.
+- `Tap Tempo Gate`.
 
 ### Outputs
 
@@ -117,6 +123,9 @@ Expose circuit calibration as context-menu items or hidden trim parameters, not 
 - `LFO Out`: bipolar `-5V..+5V` LFO waveform using the selected triangle or square shape.
 - `Range Gate Out`: low for normal range, high for long range.
 - `Bypass Gate Out`: low for bypassed, high for engaged.
+- `Clock Out`: BBD clock-derived `/64` gate for modular patching.
+- `Clock Div Out`: BBD clock-derived `/512` gate for slower timing utilities.
+- `Envelope Out`: compander envelope as `0-10V`.
 
 Control outputs should make the module patchable as a modulation source without changing the faithful audio path. Use `0-10V` for continuous user controls and gate-style outputs for switch states.
 
@@ -201,6 +210,7 @@ input
 - Start with clock period range `8 us .. 100 us`.
 - Convert to BBD delay by `8192 / (2 * clockHz)`.
 - `Range: Long` doubles the maximum clock period to `200 us`, extending the maximum nominal delay from about `409.6 ms` to about `819.2 ms`.
+- Tap/sync mode maps tap tempo and division back into the same nonlinear clock-period control, so sync mode still uses the BBD clock model.
 - Smooth the clock-control voltage but do not smooth away audible pitch slews; delay-time changes should glide and pitch-shift.
 - Add a context-menu calibration mode if later tests show the physical unit reaches a wider maximum delay.
 
@@ -341,8 +351,22 @@ The default artifact profile should be authentically noisy and alive rather than
   - Vibrato wet.
   - Runaway oscillation.
   - Long dark repeats.
+  - Wide chorus.
+  - Dub feedback throw.
+  - Clock-whine texture.
+  - Clean Rack delay.
 - Tune the default state to a sane pedal-like starting point.
 - Make the default calibration authentic/noisy rather than clean.
+
+### Performance Implementation Notes
+
+- Keep the delay memory fixed-size and allocation-free.
+- Cache expensive control mappings such as input gain, feedback gain, dry/wet blend gains, and base clock period.
+- Update clock-tracked BBD coefficients at control rate rather than on every BBD edge.
+- Use cheaper bounded nonlinear approximations for op-amp/BBD saturation where the audible behavior remains close.
+- Skip unpatched auxiliary output writes in the Rack wrapper.
+- Use Rack SIMD port I/O for the CPU-mute bypass pass-through path.
+- Maintain a Mnemonix benchmark suite covering 1, 4, and 16 channel scenarios.
 - Add manual docs for Rack voltage/CV behavior.
 
 ### Phase 8: Tests and Performance

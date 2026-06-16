@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cmath>
 #include <chrono>
+#include <array>
 #include <vector>
 #include <limits>
 #include <algorithm>
@@ -1427,6 +1428,118 @@ namespace TestSuite
     T_ASSERT(ctx, shortEdges > longEdges);
   }
 
+  void test_mnemonix_calibration_and_utilities(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP calibration trims and utility outputs...\n");
+
+    MnemonixDSP dsp;
+    dsp.setSampleRate(48000.f);
+
+    MnemonixDSP::Params params;
+    params.level = 0.7f;
+    params.blend = 0.65f;
+    params.feedback = 0.6f;
+    params.delay = 0.42f;
+    params.depth = 0.55f;
+    params.vibrato = true;
+    params.artifactProfile = MnemonixDSP::ARTIFACT_WORN;
+    params.inputGainTrim = 1.25f;
+    params.bbdBiasTrim = 1.25f;
+    params.clockBleedTrim = 1.5f;
+    params.companderTrim = 1.25f;
+    params.noiseTrim = 1.5f;
+    params.wetMakeupTrim = 1.25f;
+    params.feedbackHeadroomTrim = 1.25f;
+
+    bool sawClockHigh = false;
+    bool sawClockLow = false;
+    bool sawDivHigh = false;
+    for (int i = 0; i < 32768; ++i) {
+      const float input = 0.25f * std::sin(2.f * M_PI * 180.f * i / 48000.f);
+      const MnemonixDSP::Result result = dsp.process(input, params);
+      T_ASSERT(ctx, std::isfinite(result.output));
+      T_ASSERT(ctx, std::isfinite(result.envelope));
+      T_ASSERT(ctx, result.envelope >= -0.001f && result.envelope <= 1.001f);
+      sawClockHigh = sawClockHigh || result.clockGate > 0.5f;
+      sawClockLow = sawClockLow || result.clockGate < 0.5f;
+      sawDivHigh = sawDivHigh || result.clockDivGate > 0.5f;
+    }
+
+    T_ASSERT(ctx, sawClockHigh);
+    T_ASSERT(ctx, sawClockLow);
+    T_ASSERT(ctx, sawDivHigh);
+  }
+
+  void benchmark_mnemonix_dsp_performance(TestContext &ctx)
+  {
+    std::printf("Benchmarking MnemonixDSP scenarios...\n");
+
+    struct Scenario {
+      const char *name;
+      MnemonixDSP::Params params;
+    };
+
+    Scenario scenarios[4];
+    scenarios[0].name = "slapback";
+    scenarios[0].params.level = 0.52f;
+    scenarios[0].params.blend = 0.28f;
+    scenarios[0].params.feedback = 0.14f;
+    scenarios[0].params.delay = 0.34f;
+
+    scenarios[1].name = "chorus";
+    scenarios[1].params.level = 0.56f;
+    scenarios[1].params.blend = 0.52f;
+    scenarios[1].params.feedback = 0.42f;
+    scenarios[1].params.delay = 0.26f;
+    scenarios[1].params.depth = 0.66f;
+
+    scenarios[2].name = "long";
+    scenarios[2].params.level = 0.62f;
+    scenarios[2].params.blend = 0.48f;
+    scenarios[2].params.feedback = 0.74f;
+    scenarios[2].params.delay = 0.78f;
+    scenarios[2].params.depth = 0.22f;
+    scenarios[2].params.longDelay = true;
+    scenarios[2].params.squareLfo = true;
+
+    scenarios[3].name = "runaway";
+    scenarios[3].params.level = 0.72f;
+    scenarios[3].params.blend = 0.65f;
+    scenarios[3].params.feedback = 0.93f;
+    scenarios[3].params.delay = 0.42f;
+    scenarios[3].params.depth = 0.4f;
+    scenarios[3].params.vibrato = true;
+    scenarios[3].params.artifactProfile = MnemonixDSP::ARTIFACT_WORN;
+
+    const int channelCounts[] = {1, 4, 16};
+    const int frames = 8192;
+    const int blockSize = 128;
+    for (const Scenario &scenario : scenarios) {
+      for (int channels : channelCounts) {
+        std::array<MnemonixDSP, 16> engines;
+        for (int c = 0; c < channels; ++c) {
+          engines[c].setSampleRate(48000.f);
+        }
+
+        double checksum = 0.0;
+        const auto start = std::chrono::high_resolution_clock::now();
+        for (int i = 0; i < frames; ++i) {
+          for (int c = 0; c < channels; ++c) {
+            const float input = 0.2f * std::sin(2.f * M_PI * (110.f + 37.f * c) * i / 48000.f);
+            const MnemonixDSP::Result result = engines[c].process(input, scenario.params);
+            T_ASSERT(ctx, std::isfinite(result.output));
+            checksum += result.output * 0.000001;
+          }
+        }
+        const auto end = std::chrono::high_resolution_clock::now();
+        const double elapsedUs = std::chrono::duration<double, std::micro>(end - start).count();
+        const double usPerBlock = elapsedUs / (static_cast<double>(frames) / blockSize);
+        std::printf("  Mnemonix %-8s %2dch: %.3f us/%d-sample block (checksum %.6f)\n",
+          scenario.name, channels, usPerBlock, blockSize, checksum);
+      }
+    }
+  }
+
   //------------------------------------------------------------------------------
   // Test Runner
   //------------------------------------------------------------------------------
@@ -1497,6 +1610,8 @@ namespace TestSuite
     test_mnemonix_sample_rate_changes(ctx);
     test_mnemonix_lfo_shape_modes(ctx);
     test_mnemonix_delay_controls_lfo_rate(ctx);
+    test_mnemonix_calibration_and_utilities(ctx);
+    benchmark_mnemonix_dsp_performance(ctx);
 
     std::printf("\n");
     ctx.summary();

@@ -5,9 +5,9 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
-#include <vector>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -29,6 +29,15 @@ public:
         float feedback = 0.25f;
         float delay = 0.45f;
         float depth = 0.2f;
+        float delayOffset = 0.f;
+        float lfoPhaseOffset = 0.f;
+        float inputGainTrim = 1.f;
+        float bbdBiasTrim = 1.f;
+        float clockBleedTrim = 1.f;
+        float companderTrim = 1.f;
+        float noiseTrim = 1.f;
+        float wetMakeupTrim = 1.f;
+        float feedbackHeadroomTrim = 1.f;
         bool vibrato = false;
         bool squareLfo = false;
         bool longDelay = false;
@@ -44,10 +53,12 @@ public:
         float clockHz = 0.f;
         float delaySeconds = 0.f;
         float lfo = 0.f;
+        float clockGate = 0.f;
+        float clockDivGate = 0.f;
+        float envelope = 0.f;
     };
 
     MnemonixDSP() {
-        delayLine.assign(kDelayBufferSize, 0.f);
         setSampleRate(DEFAULT_SAMPLE_RATE);
         reset();
     }
@@ -87,11 +98,14 @@ public:
     }
 
     void reset() {
-        std::fill(delayLine.begin(), delayLine.end(), 0.f);
+        delayLine.fill(0.f);
         writeIndex = 0;
         feedbackState = 0.f;
         heldBbdSample = 0.f;
         clockPhase = 0.f;
+        clock64Gate = 0.f;
+        clock512Gate = 0.f;
+        clockDivider = 0;
         lfoPhase = 0.13f;
         rng = 0x4567abcdU;
         overloadEnv = 0.f;
@@ -101,6 +115,16 @@ public:
         smoothedDelay = 0.45f;
         smoothedDepth = 0.2f;
         filterUpdateCountdown = 0;
+        cachedInputGainLevel = -1.f;
+        cachedInputGain = 1.f;
+        cachedFeedbackParam = -1.f;
+        cachedFeedbackGain = 0.f;
+        cachedBlend = -1.f;
+        cachedDryGain = 1.f;
+        cachedWetGain = 0.f;
+        cachedDelay = -1.f;
+        cachedDelayLong = false;
+        cachedBasePeriodUs = clockPeriodUsForDelay(smoothedDelay);
 
         inputFilters.reset();
         preBbdFilters.reset();
@@ -126,13 +150,14 @@ public:
         smoothedLevel += levelSmoothCoeff * (p.level - smoothedLevel);
         smoothedBlend += controlSmoothCoeff * (p.blend - smoothedBlend);
         smoothedFeedback += controlSmoothCoeff * (p.feedback - smoothedFeedback);
-        smoothedDelay += delaySmoothCoeff * (p.delay - smoothedDelay);
+        const float targetDelay = clampf(p.delay + p.delayOffset, 0.f, 1.f);
+        smoothedDelay += delaySmoothCoeff * (targetDelay - smoothedDelay);
         smoothedDepth += controlSmoothCoeff * (p.depth - smoothedDepth);
 
         const float artifact = artifactAmount(p.artifactProfile);
         const float maxClockPeriodUs = p.longDelay ? kLongMaxClockPeriodUs : kMaxClockPeriodUs;
-        const float basePeriodUs = clockPeriodUsForDelay(smoothedDelay, p.longDelay);
-        const float lfo = advanceLfo(p.vibrato, p.squareLfo, smoothedDelay);
+        const float basePeriodUs = baseClockPeriodUs(smoothedDelay, p.longDelay);
+        const float lfo = advanceLfo(p.vibrato, p.squareLfo, smoothedDelay, p.lfoPhaseOffset);
         const float maxMod = p.vibrato ? 0.18f : 0.085f;
         float periodUs = basePeriodUs * (1.f + lfo * maxMod * smoothedDepth);
         periodUs = clampf(periodUs, kMinClockPeriodUs * 0.65f, maxClockPeriodUs * 1.35f);
@@ -144,40 +169,43 @@ public:
         if (--filterUpdateCountdown <= 0) {
             preBbdFilters.setClock(clockHz);
             postBbdFilters.setClock(clockHz);
+            for (int i = 0; i < 4; ++i) {
+                bbdChips[i].setClock(clockHz);
+            }
             filterUpdateCountdown = 16;
         }
 
-        const float inputGain = 0.055f + 3.25f * std::pow(clampf(smoothedLevel, 0.f, 1.f), 2.08f);
-        const float feedbackReturn = feedbackAmp.process(feedbackState * feedbackGain(smoothedFeedback));
+        const float inputGain = inputGainForLevel(smoothedLevel) * p.inputGainTrim;
+        const float feedbackReturn = feedbackAmp.process(feedbackState * feedbackGainCached(smoothedFeedback));
         float preamp = inputFilters.process(input * inputGain);
         preamp = inputAmp.process(preamp);
         updateOverload(preamp);
 
-        float compressed = compander.compress(preamp + feedbackReturn);
+        float compressed = compander.compress(preamp + feedbackReturn, p.companderTrim);
         float bbdDrive = preBbdFilters.process(compressed);
         bbdDrive = bbdDriverAmp.process(bbdDrive);
 
-        clockBbd(bbdDrive, clockHz, artifact, delayNorm);
+        clockBbd(bbdDrive, clockHz, artifact, delayNorm, p.bbdBiasTrim, p.clockBleedTrim);
 
         float bbdOut = heldBbdSample;
-        const float hiss = randomSigned() * (0.00006f + 0.0026f * delayNorm * delayNorm) * artifact;
-        const float clockBleed = std::sin(2.f * static_cast<float>(M_PI) * clockPhase) *
-            (0.00012f + 0.0014f * delayNorm) * artifact;
+        const float hiss = randomSigned() * (0.00006f + 0.0026f * delayNorm * delayNorm) * artifact * p.noiseTrim;
+        const float clockBleed = squareFromPhase(clockPhase) *
+            (0.00012f + 0.0014f * delayNorm) * artifact * p.clockBleedTrim;
         bbdOut += hiss + clockBleed;
 
         float post = postBbdFilters.process(bbdOut);
-        post = compander.expand(post);
+        post = compander.expand(post, p.companderTrim);
         post = recoveryAmp.process(post);
         post = outputFilters.process(post);
 
         const float feedbackDamping = 1.f - 0.13f * artifact * delayNorm;
-        feedbackState = softLimit(post * feedbackDamping, 1.8f);
+        feedbackState = softLimit(post * feedbackDamping, 1.8f * p.feedbackHeadroomTrim);
 
         const float dry = preamp;
         const float wet = post;
         float dryGain = 0.f;
         float wetGain = 0.f;
-        blendGains(smoothedBlend, dryGain, wetGain);
+        blendGainsCached(smoothedBlend, p.wetMakeupTrim, dryGain, wetGain);
         const float mixed = dry * dryGain + wet * wetGain;
         float output = outputAmp.process(mixed);
         if (!p.engaged) {
@@ -192,6 +220,9 @@ public:
         result.clockHz = clockHz;
         result.delaySeconds = delaySeconds;
         result.lfo = lfo;
+        result.clockGate = clock64Gate;
+        result.clockDivGate = clock512Gate;
+        result.envelope = compander.getEnvelope();
         return result;
     }
 
@@ -369,6 +400,7 @@ private:
     public:
         void setSampleRate(float sr) {
             sampleRate = std::max(8000.f, sr);
+            updateMaxStep();
         }
 
         void configure(float newDrive, float newBias, float newLimit, float slewPerMs, float newAsymmetry) {
@@ -377,15 +409,15 @@ private:
             limit = newLimit;
             slewPerSecond = slewPerMs * 1000.f;
             asymmetry = newAsymmetry;
+            updateMaxStep();
         }
 
         float process(float x) {
             const float shifted = x * drive + bias;
-            float shaped = std::tanh(shifted);
-            shaped -= asymmetry * std::tanh(shifted * shifted);
+            float shaped = fastTanh(shifted);
+            shaped -= asymmetry * fastTanh(shifted * shifted);
             shaped = (shaped / std::max(0.001f, drive)) * limit;
 
-            const float maxStep = slewPerSecond / sampleRate;
             const float delta = clampf(shaped - last, -maxStep, maxStep);
             last = sanitize(last + delta);
             return last;
@@ -401,8 +433,13 @@ private:
         float bias = 0.f;
         float limit = 1.f;
         float slewPerSecond = 1000.f;
+        float maxStep = 0.02f;
         float asymmetry = 0.05f;
         float last = 0.f;
+
+        void updateMaxStep() {
+            maxStep = slewPerSecond / std::max(8000.f, sampleRate);
+        }
     };
 
     class InputFilterBank {
@@ -573,20 +610,26 @@ private:
             expGain = 1.f;
         }
 
-        float compress(float x) {
+        float compress(float x, float trim) {
+            trim = clampf(trim, 0.65f, 1.65f);
             compEnv = envelope(compEnv, rectifier(x), compAttack, compRelease);
-            const float sidechain = std::tanh(compEnv * 2.1f);
-            const float targetGain = clampf(0.62f / std::pow(sidechain + 0.028f, 0.42f), 0.31f, 2.75f);
+            const float sidechain = fastTanh(compEnv * 2.1f);
+            const float targetGain = clampf((0.62f * trim) / std::pow(sidechain + 0.028f, 0.42f), 0.31f, 2.75f);
             compGain += gainSmoothing * (targetGain - compGain);
             return sanitize(x * compGain * 0.72f);
         }
 
-        float expand(float x) {
+        float expand(float x, float trim) {
+            trim = clampf(trim, 0.65f, 1.65f);
             expEnv = envelope(expEnv, rectifier(x), expAttack, expRelease);
-            const float sidechain = std::tanh(expEnv * 2.4f);
-            const float targetGain = clampf(std::pow(sidechain + 0.022f, 0.48f) * 1.85f, 0.18f, 2.05f);
+            const float sidechain = fastTanh(expEnv * 2.4f);
+            const float targetGain = clampf(std::pow(sidechain + 0.022f, 0.48f) * (1.85f / trim), 0.18f, 2.05f);
             expGain += gainSmoothing * (targetGain - expGain);
             return sanitize(x * expGain);
+        }
+
+        float getEnvelope() const {
+            return clampf(expEnv * 3.f, 0.f, 1.f);
         }
 
     private:
@@ -624,17 +667,23 @@ private:
             clockPhaseOffset = 0.25f * static_cast<float>(chipIndex);
         }
 
-        float processClockEdge(float x, float clockHz, float artifact, float delayNorm, float clockPhase) {
-            const float tickRate = std::max(1000.f, clockHz);
-            const float cutoff = clampf(clockHz * (0.32f - 0.025f * index), 1100.f, 12500.f);
-            const float coeff = 1.f - std::exp(-2.f * static_cast<float>(M_PI) * cutoff / tickRate);
+        void setClock(float clockHz) {
+            if (std::fabs(clockHz - cachedClockHz) < 8.f) {
+                return;
+            }
+            cachedClockHz = std::max(1000.f, clockHz);
+            const float cutoff = clampf(cachedClockHz * (0.32f - 0.025f * index), 1100.f, 12500.f);
+            coeff = 1.f - std::exp(-2.f * static_cast<float>(M_PI) * cutoff / cachedClockHz);
+        }
 
-            float v = x + bias * artifact;
-            v = std::tanh(v * (1.06f + 0.08f * index)) / (1.06f + 0.08f * index);
+        float processClockEdge(float x, float artifact, float delayNorm, float clockPhase, float biasTrim, float bleedTrim) {
+            float v = x + bias * artifact * biasTrim;
+            const float drive = 1.06f + 0.08f * index;
+            v = fastTanh(v * drive) / drive;
             memory += coeff * (v - memory);
 
-            const float feedthrough = std::sin(2.f * static_cast<float>(M_PI) * (clockPhase + clockPhaseOffset)) *
-                (0.00006f + 0.00022f * delayNorm) * artifact;
+            const float feedthrough = squareFromPhase(clockPhase + clockPhaseOffset) *
+                (0.00006f + 0.00022f * delayNorm) * artifact * bleedTrim;
             return sanitize(memory * gain + feedthrough);
         }
 
@@ -648,9 +697,11 @@ private:
         float bias = 0.f;
         float clockPhaseOffset = 0.f;
         float memory = 0.f;
+        float cachedClockHz = -1.f;
+        float coeff = 0.9f;
     };
 
-    std::vector<float> delayLine;
+    std::array<float, kDelayBufferSize> delayLine;
     int writeIndex = 0;
 
     float sampleRate = DEFAULT_SAMPLE_RATE;
@@ -668,10 +719,24 @@ private:
     float feedbackState = 0.f;
     float heldBbdSample = 0.f;
     float clockPhase = 0.f;
+    float clock64Gate = 0.f;
+    float clock512Gate = 0.f;
+    int clockDivider = 0;
     float lfoPhase = 0.f;
     float overloadEnv = 0.f;
     uint32_t rng = 0x4567abcdU;
     int filterUpdateCountdown = 0;
+    float cachedInputGainLevel = -1.f;
+    float cachedInputGain = 1.f;
+    float cachedFeedbackParam = -1.f;
+    float cachedFeedbackGain = 0.f;
+    float cachedBlend = -1.f;
+    float cachedWetMakeupTrim = -1.f;
+    float cachedDryGain = 1.f;
+    float cachedWetGain = 0.f;
+    float cachedDelay = -1.f;
+    bool cachedDelayLong = false;
+    float cachedBasePeriodUs = 40.f;
 
     InputFilterBank inputFilters;
     PreBbdFilterBank preBbdFilters;
@@ -689,23 +754,26 @@ private:
         return 1.f - std::exp(-1.f / (sampleRate * ms * 0.001f));
     }
 
-    float advanceLfo(bool vibrato, bool squareLfo, float delayNorm) {
+    float advanceLfo(bool vibrato, bool squareLfo, float delayNorm, float phaseOffset) {
         const float lfoRate = lfoRateHzForDelay(delayNorm, vibrato);
         lfoPhase += lfoRate * sampleTime;
         if (lfoPhase >= 1.f) {
             lfoPhase -= std::floor(lfoPhase);
         }
 
+        float phaseNorm = lfoPhase + phaseOffset;
+        phaseNorm -= std::floor(phaseNorm);
+
         if (squareLfo) {
-            return lfoPhase < 0.5f ? 1.f : -1.f;
+            return phaseNorm < 0.5f ? 1.f : -1.f;
         }
 
-        const float triangle = 1.f - 4.f * std::fabs(lfoPhase - 0.5f);
-        const float phase = 2.f * static_cast<float>(M_PI) * lfoPhase;
+        const float triangle = 1.f - 4.f * std::fabs(phaseNorm - 0.5f);
+        const float phase = 2.f * static_cast<float>(M_PI) * phaseNorm;
         return clampf(triangle + 0.04f * std::sin(2.f * phase + 0.6f), -1.f, 1.f);
     }
 
-    void clockBbd(float bbdDrive, float clockHz, float artifact, float delayNorm) {
+    void clockBbd(float bbdDrive, float clockHz, float artifact, float delayNorm, float biasTrim, float bleedTrim) {
         clockPhase += clockHz * sampleTime;
         int edges = 0;
         while (clockPhase >= 1.f && edges < 32) {
@@ -714,10 +782,13 @@ private:
 
             float staged = rawDelayed;
             for (int i = 0; i < 4; ++i) {
-                staged = bbdChips[i].processClockEdge(staged, clockHz, artifact, delayNorm, clockPhase);
+                staged = bbdChips[i].processClockEdge(staged, artifact, delayNorm, clockPhase, biasTrim, bleedTrim);
             }
             heldBbdSample = staged;
 
+            ++clockDivider;
+            clock64Gate = (clockDivider & 0x20) ? 1.f : 0.f;
+            clock512Gate = (clockDivider & 0x100) ? 1.f : 0.f;
             clockPhase -= 1.f;
             ++edges;
         }
@@ -755,6 +826,15 @@ private:
         p.feedback = clampf(sanitize(p.feedback), 0.f, 1.f);
         p.delay = clampf(sanitize(p.delay), 0.f, 1.f);
         p.depth = clampf(sanitize(p.depth), 0.f, 1.f);
+        p.delayOffset = clampf(sanitize(p.delayOffset), -0.25f, 0.25f);
+        p.lfoPhaseOffset = clampf(sanitize(p.lfoPhaseOffset), -1.f, 1.f);
+        p.inputGainTrim = clampf(sanitizeControl(p.inputGainTrim, 1.f), 0.5f, 1.5f);
+        p.bbdBiasTrim = clampf(sanitizeControl(p.bbdBiasTrim, 1.f), 0.f, 2.f);
+        p.clockBleedTrim = clampf(sanitizeControl(p.clockBleedTrim, 1.f), 0.f, 2.5f);
+        p.companderTrim = clampf(sanitizeControl(p.companderTrim, 1.f), 0.65f, 1.65f);
+        p.noiseTrim = clampf(sanitizeControl(p.noiseTrim, 1.f), 0.f, 2.5f);
+        p.wetMakeupTrim = clampf(sanitizeControl(p.wetMakeupTrim, 1.f), 0.5f, 1.5f);
+        p.feedbackHeadroomTrim = clampf(sanitizeControl(p.feedbackHeadroomTrim, 1.f), 0.6f, 1.8f);
         if (p.artifactProfile < ARTIFACT_CLEAN || p.artifactProfile > ARTIFACT_WORN) {
             p.artifactProfile = ARTIFACT_AUTHENTIC;
         }
@@ -770,6 +850,41 @@ private:
         }
     }
 
+    float baseClockPeriodUs(float delayNorm, bool longDelay) {
+        if (std::fabs(delayNorm - cachedDelay) > 1e-5f || longDelay != cachedDelayLong) {
+            cachedDelay = delayNorm;
+            cachedDelayLong = longDelay;
+            cachedBasePeriodUs = clockPeriodUsForDelay(delayNorm, longDelay);
+        }
+        return cachedBasePeriodUs;
+    }
+
+    float inputGainForLevel(float level) {
+        if (std::fabs(level - cachedInputGainLevel) > 1e-5f) {
+            cachedInputGainLevel = level;
+            cachedInputGain = 0.055f + 3.25f * std::pow(clampf(level, 0.f, 1.f), 2.08f);
+        }
+        return cachedInputGain;
+    }
+
+    float feedbackGainCached(float feedback) {
+        if (std::fabs(feedback - cachedFeedbackParam) > 1e-5f) {
+            cachedFeedbackParam = feedback;
+            cachedFeedbackGain = feedbackGain(feedback);
+        }
+        return cachedFeedbackGain;
+    }
+
+    void blendGainsCached(float blend, float wetMakeupTrim, float& dryGain, float& wetGain) {
+        if (std::fabs(blend - cachedBlend) > 1e-5f || std::fabs(wetMakeupTrim - cachedWetMakeupTrim) > 1e-5f) {
+            cachedBlend = blend;
+            cachedWetMakeupTrim = wetMakeupTrim;
+            blendGains(blend, wetMakeupTrim, cachedDryGain, cachedWetGain);
+        }
+        dryGain = cachedDryGain;
+        wetGain = cachedWetGain;
+    }
+
     static float feedbackGain(float feedback) {
         feedback = clampf(feedback, 0.f, 1.f);
         float gain = 1.12f * std::pow(feedback, 1.55f);
@@ -779,17 +894,17 @@ private:
         return gain;
     }
 
-    static void blendGains(float blend, float& dryGain, float& wetGain) {
+    static void blendGains(float blend, float wetMakeupTrim, float& dryGain, float& wetGain) {
         blend = clampf(sanitize(blend), 0.f, 1.f);
         const float angle = blend * 0.5f * static_cast<float>(M_PI);
         const float center = std::sin(blend * static_cast<float>(M_PI));
         const float loudnessMakeup = 1.f + kBlendCenterMakeup * center;
         dryGain = std::cos(angle) * loudnessMakeup;
-        wetGain = std::sin(angle) * kWetMixMakeup * loudnessMakeup;
+        wetGain = std::sin(angle) * kWetMixMakeup * wetMakeupTrim * loudnessMakeup;
     }
 
     static float softLimit(float x, float limit) {
-        return limit * std::tanh(x / std::max(0.001f, limit));
+        return limit * fastTanh(x / std::max(0.001f, limit));
     }
 
     static float rcCutoff(float resistanceOhms, float capacitanceFarads) {
@@ -801,6 +916,24 @@ private:
             return 0.f;
         }
         return clampf(x, -8.f, 8.f);
+    }
+
+    static float sanitizeControl(float x, float fallback) {
+        if (!std::isfinite(x)) {
+            return fallback;
+        }
+        return x;
+    }
+
+    static float squareFromPhase(float phase) {
+        phase -= std::floor(phase);
+        return phase < 0.5f ? 1.f : -1.f;
+    }
+
+    static float fastTanh(float x) {
+        x = clampf(x, -3.f, 3.f);
+        const float x2 = x * x;
+        return x * (27.f + x2) / (27.f + 9.f * x2);
     }
 
     static float clampf(float x, float lo, float hi) {
