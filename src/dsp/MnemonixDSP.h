@@ -225,6 +225,19 @@ public:
         return bbdDelaySecondsForClockPeriodUs(clockPeriodUsForDelay(delayNorm, longDelay));
     }
 
+    static float delayNormForDelayMilliseconds(float delayMs, bool longDelay) {
+        const float minDelayMs = delaySecondsForDelay(0.f, longDelay) * 1000.f;
+        const float maxDelayMs = delaySecondsForDelay(1.f, longDelay) * 1000.f;
+        if (!std::isfinite(delayMs)) {
+            delayMs = minDelayMs;
+        }
+        delayMs = clampf(delayMs, minDelayMs, maxDelayMs);
+        const float maxPeriodUs = longDelay ? kLongMaxClockPeriodUs : kMaxClockPeriodUs;
+        const float periodUs = clampf(delayMs / (static_cast<float>(kBbdDelayTicks) * 0.001f),
+            kMinClockPeriodUs, maxPeriodUs);
+        return clampf(std::log(periodUs / kMinClockPeriodUs) / std::log(maxPeriodUs / kMinClockPeriodUs), 0.f, 1.f);
+    }
+
     static float lfoRateHzForDelay(float delayNorm, bool vibrato) {
         delayNorm = clampf(sanitize(delayNorm), 0.f, 1.f);
         const float baseRate = vibrato ? kVibratoMidLfoHz : kChorusMidLfoHz;

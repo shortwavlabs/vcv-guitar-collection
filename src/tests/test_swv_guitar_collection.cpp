@@ -1197,6 +1197,9 @@ namespace TestSuite
     T_ASSERT_NEAR(ctx, MnemonixDSP::delaySecondsForDelay(1.f), 0.4096f, 1e-5f);
     T_ASSERT_NEAR(ctx, MnemonixDSP::clockPeriodUsForDelay(1.f, true), 200.f, 1e-3f);
     T_ASSERT_NEAR(ctx, MnemonixDSP::delaySecondsForDelay(1.f, true), 0.8192f, 1e-5f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delayNormForDelayMilliseconds(32.768f, false), 0.f, 1e-5f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delayNormForDelayMilliseconds(409.6f, false), 1.f, 1e-5f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delayNormForDelayMilliseconds(819.2f, true), 1.f, 1e-5f);
   }
 
   void test_mnemonix_bypass_direct(TestContext &ctx)

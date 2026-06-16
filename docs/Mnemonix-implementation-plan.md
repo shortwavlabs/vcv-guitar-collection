@@ -71,7 +71,7 @@ Visual design should follow Shortwav Labs branding rather than imitating the ori
 - `Level`: input drive into the modeled preamp/compander. Log taper like `P1`.
 - `Blend`: calibrated dry/wet mix. Use the modeled internal dry tap with wet-return makeup and an equal-power contour so perceived level stays stable across the sweep.
 - `Feedback`: wet feedback return amount. Log taper like `P3`; allow self-oscillation above roughly 75 percent.
-- `Delay`: BBD clock/delay time and chorus/vibrato LFO rate. Map to the CD4047 clock period, not directly to a clean delay time; shorter delay settings sweep the LFO faster and longer delay settings slow it down.
+- `Delay`: BBD clock/delay time and chorus/vibrato LFO rate. Map to the CD4047 clock period, not directly to a clean delay time; shorter delay settings sweep the LFO faster and longer delay settings slow it down. Display the Rack parameter value in milliseconds, not percent.
 - `Depth`: LFO modulation depth into the clock-control path, matching `P5`.
 - `Chorus/Vibrato`: two-position switch matching `S2`.
 - `LFO Shape`: `Triangle/Square` switch inspired by the Memory Boy modulation option.

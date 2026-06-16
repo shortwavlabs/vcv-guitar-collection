@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace {
 
@@ -23,6 +24,32 @@ float outputControlVoltage(float value) {
 bool isUsableSampleRate(float sampleRate) {
     return std::isfinite(sampleRate) && sampleRate >= 8000.f;
 }
+
+struct DelayTimeQuantity : engine::ParamQuantity {
+    float getDisplayValue() override {
+        bool longDelay = false;
+        if (module) {
+            Mnemonix* mnemonix = static_cast<Mnemonix*>(module);
+            longDelay = mnemonix->params[Mnemonix::LONG_PARAM].getValue() >= 0.5f;
+        }
+        return MnemonixDSP::delaySecondsForDelay(getValue(), longDelay) * 1000.f;
+    }
+
+    void setDisplayValue(float displayValue) override {
+        bool longDelay = false;
+        if (module) {
+            Mnemonix* mnemonix = static_cast<Mnemonix*>(module);
+            longDelay = mnemonix->params[Mnemonix::LONG_PARAM].getValue() >= 0.5f;
+        }
+        setImmediateValue(MnemonixDSP::delayNormForDelayMilliseconds(displayValue, longDelay));
+    }
+
+    std::string getDisplayValueString() override {
+        char buffer[32];
+        std::snprintf(buffer, sizeof(buffer), "%.1f", getDisplayValue());
+        return buffer;
+    }
+};
 
 struct MnemonixLabelOverlay : TransparentWidget {
     void drawLabel(const DrawArgs& args, Vec pos, const char* text, float size = 9.f, NVGcolor color = nvgRGB(28, 28, 30)) {
@@ -80,7 +107,7 @@ Mnemonix::Mnemonix() {
     configParam(LEVEL_PARAM, 0.f, 1.f, 0.55f, "Level", "%", 0.f, 100.f);
     configParam(BLEND_PARAM, 0.f, 1.f, 0.5f, "Blend", "%", 0.f, 100.f);
     configParam(FEEDBACK_PARAM, 0.f, 1.f, 0.25f, "Feedback", "%", 0.f, 100.f);
-    configParam(DELAY_PARAM, 0.f, 1.f, 0.45f, "Delay", "%", 0.f, 100.f);
+    configParam<DelayTimeQuantity>(DELAY_PARAM, 0.f, 1.f, 0.45f, "Delay", " ms");
     configParam(DEPTH_PARAM, 0.f, 1.f, 0.2f, "Depth", "%", 0.f, 100.f);
     configSwitch(MODE_PARAM, 0.f, 1.f, 0.f, "Chorus/Vibrato", {"Chorus", "Vibrato"});
     configSwitch(SHAPE_PARAM, 0.f, 1.f, 0.f, "LFO shape", {"Triangle", "Square"});
