@@ -58,7 +58,7 @@ struct MnemonixLabelOverlay : TransparentWidget {
         drawLabel(args, Vec(260, 216), "BYPASS", 7.5f, dark);
         drawLabel(args, Vec(295, 216), "GATE", 7.5f, soft);
 
-        const char* outLabels[] = {"LVL", "BLD", "FB", "DLY", "DPT", "MOD", "SHP", "RNG", "ON"};
+        const char* outLabels[] = {"LVL", "BLD", "FB", "DLY", "DPT", "MOD", "LFO", "RNG", "ON"};
         const float outXs[] = {30.f, 65.f, 100.f, 135.f, 170.f, 205.f, 240.f, 275.f, 310.f};
         for (int i = 0; i < 9; ++i) {
             drawLabel(args, Vec(outXs[i], 286), outLabels[i], 7.f, blue);
@@ -113,7 +113,7 @@ Mnemonix::Mnemonix() {
     configOutput(DELAY_CV_OUTPUT, "Delay CV");
     configOutput(DEPTH_CV_OUTPUT, "Depth CV");
     configOutput(MODE_GATE_OUTPUT, "Chorus/Vibrato Gate");
-    configOutput(SHAPE_GATE_OUTPUT, "LFO Shape Gate");
+    configOutput(SHAPE_LFO_OUTPUT, "LFO");
     configOutput(ENGAGE_GATE_OUTPUT, "Engage Gate");
     configOutput(LONG_GATE_OUTPUT, "Long Range Gate");
 
@@ -159,6 +159,7 @@ void Mnemonix::process(const ProcessArgs& args) {
     outputs[WET_OUTPUT].setChannels(channels);
 
     float overload = 0.f;
+    float lfoOutput = 0.f;
     for (int c = 0; c < channels; ++c) {
         const float in = inputs[AUDIO_INPUT].getPolyVoltage(c) / 5.f;
         const MnemonixDSP::Result result = engines[c].process(in, dspParams);
@@ -171,6 +172,9 @@ void Mnemonix::process(const ProcessArgs& args) {
         outputs[DIRECT_OUTPUT].setVoltage(finiteClamp(direct * 5.f, -12.f, 12.f), c);
         outputs[WET_OUTPUT].setVoltage(finiteClamp(wet * 5.f, -12.f, 12.f), c);
         overload = std::max(overload, result.overload);
+        if (c == 0 && std::isfinite(result.lfo)) {
+            lfoOutput = result.lfo;
+        }
     }
 
     outputs[LEVEL_CV_OUTPUT].setVoltage(outputControlVoltage(dspParams.level));
@@ -179,7 +183,7 @@ void Mnemonix::process(const ProcessArgs& args) {
     outputs[DELAY_CV_OUTPUT].setVoltage(outputControlVoltage(dspParams.delay));
     outputs[DEPTH_CV_OUTPUT].setVoltage(outputControlVoltage(dspParams.depth));
     outputs[MODE_GATE_OUTPUT].setVoltage(dspParams.vibrato ? 10.f : 0.f);
-    outputs[SHAPE_GATE_OUTPUT].setVoltage(dspParams.squareLfo ? 10.f : 0.f);
+    outputs[SHAPE_LFO_OUTPUT].setVoltage(finiteClamp(lfoOutput * 5.f, -5.f, 5.f));
     outputs[ENGAGE_GATE_OUTPUT].setVoltage(dspParams.engaged ? 10.f : 0.f);
     outputs[LONG_GATE_OUTPUT].setVoltage(dspParams.longDelay ? 10.f : 0.f);
 
@@ -289,7 +293,7 @@ MnemonixWidget::MnemonixWidget(Mnemonix* module) {
     addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[3], 268), module, Mnemonix::DELAY_CV_OUTPUT));
     addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[4], 268), module, Mnemonix::DEPTH_CV_OUTPUT));
     addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[5], 268), module, Mnemonix::MODE_GATE_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[6], 268), module, Mnemonix::SHAPE_GATE_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[6], 268), module, Mnemonix::SHAPE_LFO_OUTPUT));
     addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[7], 268), module, Mnemonix::LONG_GATE_OUTPUT));
     addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[8], 268), module, Mnemonix::ENGAGE_GATE_OUTPUT));
 

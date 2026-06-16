@@ -1299,6 +1299,7 @@ namespace TestSuite
     squareParams.squareLfo = true;
 
     float accumulatedClockDifference = 0.f;
+    float accumulatedLfoDifference = 0.f;
     for (int i = 0; i < 4096; ++i) {
       const MnemonixDSP::Result triangle = triangleDsp.process(0.f, triangleParams);
       const MnemonixDSP::Result square = squareDsp.process(0.f, squareParams);
@@ -1306,10 +1307,16 @@ namespace TestSuite
       T_ASSERT(ctx, std::isfinite(square.output));
       T_ASSERT(ctx, std::isfinite(triangle.clockHz));
       T_ASSERT(ctx, std::isfinite(square.clockHz));
+      T_ASSERT(ctx, std::isfinite(triangle.lfo));
+      T_ASSERT(ctx, std::isfinite(square.lfo));
+      T_ASSERT(ctx, triangle.lfo >= -1.01f && triangle.lfo <= 1.01f);
+      T_ASSERT(ctx, square.lfo >= -1.01f && square.lfo <= 1.01f);
       accumulatedClockDifference += std::fabs(triangle.clockHz - square.clockHz);
+      accumulatedLfoDifference += std::fabs(triangle.lfo - square.lfo);
     }
 
     T_ASSERT(ctx, accumulatedClockDifference > 1000.f);
+    T_ASSERT(ctx, accumulatedLfoDifference > 100.f);
   }
 
   //------------------------------------------------------------------------------

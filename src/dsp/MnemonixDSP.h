@@ -43,6 +43,7 @@ public:
         float overload = 0.f;
         float clockHz = 0.f;
         float delaySeconds = 0.f;
+        float lfo = 0.f;
     };
 
     MnemonixDSP() {
@@ -186,6 +187,7 @@ public:
         result.overload = clampf(overloadEnv * 1.6f, 0.f, 1.f);
         result.clockHz = clockHz;
         result.delaySeconds = delaySeconds;
+        result.lfo = lfo;
         return result;
     }
 

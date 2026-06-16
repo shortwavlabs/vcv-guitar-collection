@@ -114,7 +114,7 @@ Expose circuit calibration as context-menu items or hidden trim parameters, not 
 - `Delay CV Out`: final post-CV delay/clock control value.
 - `Depth CV Out`: final post-CV modulation-depth control value.
 - `Chorus/Vibrato Gate Out`: low for chorus, high for vibrato.
-- `LFO Shape Gate Out`: low for triangle, high for square.
+- `LFO Out`: bipolar `-5V..+5V` LFO waveform using the selected triangle or square shape.
 - `Range Gate Out`: low for normal range, high for long range.
 - `Bypass Gate Out`: low for bypassed, high for engaged.
 

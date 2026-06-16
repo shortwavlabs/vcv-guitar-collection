@@ -48,7 +48,7 @@ struct Mnemonix : Module {
         DELAY_CV_OUTPUT,
         DEPTH_CV_OUTPUT,
         MODE_GATE_OUTPUT,
-        SHAPE_GATE_OUTPUT,
+        SHAPE_LFO_OUTPUT,
         ENGAGE_GATE_OUTPUT,
         LONG_GATE_OUTPUT,
         OUTPUTS_LEN
