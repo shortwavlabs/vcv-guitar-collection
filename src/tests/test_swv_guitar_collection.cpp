@@ -12,6 +12,7 @@
 #include "../dsp/Nam.h"
 #include "../dsp/IRLoader.h"
 #include "../dsp/CabSimDSP.h"
+#include "../dsp/MnemonixDSP.h"
 #include "../dsp/WavFile.h"
 
 namespace TestSuite
@@ -1155,6 +1156,95 @@ namespace TestSuite
   }
 
   //------------------------------------------------------------------------------
+  // MnemonixDSP Tests
+  //------------------------------------------------------------------------------
+  void test_mnemonix_delay_mapping(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP Rev_D delay mapping...\n");
+
+    T_ASSERT_NEAR(ctx, MnemonixDSP::clockPeriodUsForDelay(0.f), 8.f, 1e-4f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::clockPeriodUsForDelay(1.f), 100.f, 1e-3f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delaySecondsForDelay(0.f), 0.032768f, 1e-6f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delaySecondsForDelay(1.f), 0.4096f, 1e-5f);
+  }
+
+  void test_mnemonix_bypass_direct(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP bypass direct behavior...\n");
+
+    MnemonixDSP dsp;
+    dsp.setSampleRate(48000.f);
+
+    MnemonixDSP::Params params;
+    params.engaged = false;
+    params.level = 1.f;
+    params.feedback = 1.f;
+    params.artifactProfile = MnemonixDSP::ARTIFACT_AUTHENTIC;
+
+    for (int i = 0; i < 256; ++i) {
+      const float input = 0.25f * std::sin(2.f * M_PI * 220.f * i / 48000.f);
+      const MnemonixDSP::Result result = dsp.process(input, params);
+      T_ASSERT(ctx, std::isfinite(result.output));
+      T_ASSERT_NEAR(ctx, result.output, input, 1e-5f);
+      T_ASSERT_NEAR(ctx, result.direct, input, 1e-6f);
+    }
+  }
+
+  void test_mnemonix_dsp_stability(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP long-run stability...\n");
+
+    MnemonixDSP dsp;
+    dsp.setSampleRate(48000.f);
+
+    MnemonixDSP::Params params;
+    params.level = 0.75f;
+    params.blend = 0.65f;
+    params.feedback = 0.85f;
+    params.delay = 0.7f;
+    params.depth = 0.75f;
+    params.vibrato = true;
+    params.engaged = true;
+    params.artifactProfile = MnemonixDSP::ARTIFACT_WORN;
+
+    for (int i = 0; i < 50000; ++i) {
+      const float input = 0.35f * std::sin(2.f * M_PI * 330.f * i / 48000.f);
+      const MnemonixDSP::Result result = dsp.process(input, params);
+      T_ASSERT(ctx, std::isfinite(result.output));
+      T_ASSERT(ctx, std::isfinite(result.wet));
+      T_ASSERT(ctx, std::isfinite(result.clockHz));
+      T_ASSERT(ctx, result.clockHz > 1000.f);
+      T_ASSERT(ctx, result.delaySeconds > 0.02f);
+    }
+  }
+
+  void test_mnemonix_reset(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP reset...\n");
+
+    MnemonixDSP dsp;
+    dsp.setSampleRate(96000.f);
+
+    MnemonixDSP::Params params;
+    params.feedback = 0.9f;
+    params.blend = 1.f;
+
+    for (int i = 0; i < 2000; ++i) {
+      dsp.process(0.5f, params);
+    }
+
+    dsp.reset();
+
+    params.feedback = 0.f;
+    params.blend = 1.f;
+    for (int i = 0; i < 64; ++i) {
+      const MnemonixDSP::Result result = dsp.process(0.f, params);
+      T_ASSERT(ctx, std::isfinite(result.output));
+      T_ASSERT(ctx, std::fabs(result.output) < 0.01f);
+    }
+  }
+
+  //------------------------------------------------------------------------------
   // Test Runner
   //------------------------------------------------------------------------------
   void run_all_swv_guitar_collection_tests()
@@ -1214,6 +1304,12 @@ namespace TestSuite
     test_cabsim_dsp_normalization_flag(ctx);
     test_cabsim_dsp_unload_ir(ctx);
     test_cabsim_dsp_invalid_slot(ctx);
+
+    // MnemonixDSP tests
+    test_mnemonix_delay_mapping(ctx);
+    test_mnemonix_bypass_direct(ctx);
+    test_mnemonix_dsp_stability(ctx);
+    test_mnemonix_reset(ctx);
 
     std::printf("\n");
     ctx.summary();

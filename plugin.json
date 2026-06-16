@@ -22,6 +22,12 @@
       "name": "Cabinet Simulator",
       "description": "Convolution-based cabinet simulator with dual IR loading, blending, and tone shaping filters",
       "tags": ["Effect", "Equalizer"]
+    },
+    {
+      "slug": "Mnemonix",
+      "name": "Mnemonix",
+      "description": "Rev_D MN3008-inspired analog BBD memory delay with chorus, vibrato, compander drive, and authentic clock artifacts",
+      "tags": ["Delay", "Effect", "Chorus"]
     }
   ]
 }
