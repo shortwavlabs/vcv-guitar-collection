@@ -74,6 +74,7 @@ Visual design should follow Shortwav Labs branding rather than imitating the ori
 - `Delay`: BBD clock/delay time. Map to the CD4047 clock period, not directly to a clean delay time.
 - `Depth`: LFO modulation depth into the clock-control path, matching `P5`.
 - `Chorus/Vibrato`: two-position switch matching `S2`.
+- `Range`: `Normal/Long` switch. Normal preserves the Rev_D schematic range; Long doubles the maximum clock period for extended delay.
 - `Bypass`: optional Rack button mirroring the footswitch; also call `configBypass(AUDIO_INPUT, AUDIO_OUTPUT)`.
 
 ### Trims / Context Menu
@@ -97,6 +98,7 @@ Expose circuit calibration as context-menu items or hidden trim parameters, not 
 - `Blend CV` with attenuverter.
 - `Depth CV` with attenuverter.
 - `Chorus/Vibrato Gate/CV` input for switching modes.
+- `Range Gate/CV` input for normal/long delay range.
 - `Bypass Gate/CV`.
 
 ### Outputs
@@ -110,6 +112,7 @@ Expose circuit calibration as context-menu items or hidden trim parameters, not 
 - `Delay CV Out`: final post-CV delay/clock control value.
 - `Depth CV Out`: final post-CV modulation-depth control value.
 - `Chorus/Vibrato Gate Out`: low for chorus, high for vibrato.
+- `Range Gate Out`: low for normal range, high for long range.
 - `Bypass Gate Out`: low for bypassed, high for engaged.
 
 Control outputs should make the module patchable as a modulation source without changing the faithful audio path. Use `0-10V` for continuous user controls and gate-style outputs for switch states.
@@ -194,6 +197,7 @@ input
 - Model `Delay` as a CD4047 clock-period control.
 - Start with clock period range `8 us .. 100 us`.
 - Convert to BBD delay by `8192 / (2 * clockHz)`.
+- `Range: Long` doubles the maximum clock period to `200 us`, extending the maximum nominal delay from about `409.6 ms` to about `819.2 ms`.
 - Smooth the clock-control voltage but do not smooth away audible pitch slews; delay-time changes should glide and pitch-shift.
 - Add a context-menu calibration mode if later tests show the physical unit reaches a wider maximum delay.
 

@@ -1166,6 +1166,8 @@ namespace TestSuite
     T_ASSERT_NEAR(ctx, MnemonixDSP::clockPeriodUsForDelay(1.f), 100.f, 1e-3f);
     T_ASSERT_NEAR(ctx, MnemonixDSP::delaySecondsForDelay(0.f), 0.032768f, 1e-6f);
     T_ASSERT_NEAR(ctx, MnemonixDSP::delaySecondsForDelay(1.f), 0.4096f, 1e-5f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::clockPeriodUsForDelay(1.f, true), 200.f, 1e-3f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delaySecondsForDelay(1.f, true), 0.8192f, 1e-5f);
   }
 
   void test_mnemonix_bypass_direct(TestContext &ctx)
@@ -1204,6 +1206,7 @@ namespace TestSuite
     params.delay = 0.7f;
     params.depth = 0.75f;
     params.vibrato = true;
+    params.longDelay = true;
     params.engaged = true;
     params.artifactProfile = MnemonixDSP::ARTIFACT_WORN;
 

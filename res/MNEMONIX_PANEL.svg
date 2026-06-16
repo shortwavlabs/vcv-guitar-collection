@@ -18,7 +18,8 @@
   <path d="M21 320H309V364H21Z" fill="none" stroke="#edf0ec" stroke-width="1"/>
   <path d="M-36 160L330 24V56L-36 192Z" fill="#ffffff" opacity="0.27"/>
   <path d="M0 0H330V380H0Z" fill="none" stroke="#151719" stroke-width="2"/>
-  <circle cx="45" cy="226" r="9" fill="#f0d6d4" stroke="#c08f8d"/>
-  <circle cx="290" cy="226" r="9" fill="#d4ead8" stroke="#88af90"/>
-  <circle cx="156" cy="202" r="7" fill="#f1e7c1" stroke="#b8a65a"/>
+  <circle cx="35" cy="226" r="9" fill="#f0d6d4" stroke="#c08f8d"/>
+  <circle cx="116" cy="226" r="7" fill="#f1e7c1" stroke="#b8a65a"/>
+  <circle cx="214" cy="226" r="7" fill="#cfe5f3" stroke="#6f9bb6"/>
+  <circle cx="302" cy="226" r="9" fill="#d4ead8" stroke="#88af90"/>
 </svg>

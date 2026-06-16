@@ -30,6 +30,7 @@ public:
         float delay = 0.45f;
         float depth = 0.2f;
         bool vibrato = false;
+        bool longDelay = false;
         bool engaged = true;
         int artifactProfile = ARTIFACT_AUTHENTIC;
     };
@@ -127,15 +128,16 @@ public:
         smoothedDepth += controlSmoothCoeff * (p.depth - smoothedDepth);
 
         const float artifact = artifactAmount(p.artifactProfile);
-        const float basePeriodUs = clockPeriodUsForDelay(smoothedDelay);
+        const float maxClockPeriodUs = p.longDelay ? kLongMaxClockPeriodUs : kMaxClockPeriodUs;
+        const float basePeriodUs = clockPeriodUsForDelay(smoothedDelay, p.longDelay);
         const float lfo = advanceLfo(p.vibrato);
         const float maxMod = p.vibrato ? 0.18f : 0.085f;
         float periodUs = basePeriodUs * (1.f + lfo * maxMod * smoothedDepth);
-        periodUs = clampf(periodUs, kMinClockPeriodUs * 0.65f, kMaxClockPeriodUs * 1.35f);
+        periodUs = clampf(periodUs, kMinClockPeriodUs * 0.65f, maxClockPeriodUs * 1.35f);
 
         const float clockHz = 1000000.f / periodUs;
         const float delaySeconds = bbdDelaySecondsForClockPeriodUs(periodUs);
-        const float delayNorm = clampf((periodUs - kMinClockPeriodUs) / (kMaxClockPeriodUs - kMinClockPeriodUs), 0.f, 1.f);
+        const float delayNorm = clampf((periodUs - kMinClockPeriodUs) / (maxClockPeriodUs - kMinClockPeriodUs), 0.f, 1.f);
 
         if (--filterUpdateCountdown <= 0) {
             preBbdFilters.setClock(clockHz);
@@ -195,8 +197,13 @@ public:
     }
 
     static float clockPeriodUsForDelay(float delayNorm) {
+        return clockPeriodUsForDelay(delayNorm, false);
+    }
+
+    static float clockPeriodUsForDelay(float delayNorm, bool longDelay) {
         delayNorm = clampf(delayNorm, 0.f, 1.f);
-        return kMinClockPeriodUs * std::pow(kMaxClockPeriodUs / kMinClockPeriodUs, delayNorm);
+        const float maxPeriodUs = longDelay ? kLongMaxClockPeriodUs : kMaxClockPeriodUs;
+        return kMinClockPeriodUs * std::pow(maxPeriodUs / kMinClockPeriodUs, delayNorm);
     }
 
     static float bbdDelaySecondsForClockPeriodUs(float periodUs) {
@@ -204,12 +211,17 @@ public:
     }
 
     static float delaySecondsForDelay(float delayNorm) {
-        return bbdDelaySecondsForClockPeriodUs(clockPeriodUsForDelay(delayNorm));
+        return delaySecondsForDelay(delayNorm, false);
+    }
+
+    static float delaySecondsForDelay(float delayNorm, bool longDelay) {
+        return bbdDelaySecondsForClockPeriodUs(clockPeriodUsForDelay(delayNorm, longDelay));
     }
 
 private:
     static constexpr float kMinClockPeriodUs = 8.f;
     static constexpr float kMaxClockPeriodUs = 100.f;
+    static constexpr float kLongMaxClockPeriodUs = 200.f;
     static const int kBbdDelayTicks = 4096;
     static const int kDelayBufferSize = 8192;
     static const int kDelayBufferMask = kDelayBufferSize - 1;
