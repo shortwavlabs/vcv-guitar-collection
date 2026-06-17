@@ -2,16 +2,14 @@
 <svg width="330" height="380" viewBox="0 0 330 380" xmlns="http://www.w3.org/2000/svg">
   <rect width="330" height="380" fill="#d7d9d5"/>
   <path d="M0 0H330V380H0Z" fill="#d7d9d5"/>
-  <path d="M0 0H330V43H0Z" fill="#e8e9e4"/>
   <path d="M0 310H330V380H0Z" fill="#c7cbc8"/>
   <path d="M0 190H330V250H0Z" fill="#eef0ec"/>
   <path d="M0 250H330V310H0Z" fill="#e3e7e8"/>
-  <path d="M0 42H330" stroke="#202326" stroke-width="1"/>
   <path d="M0 190H330" stroke="#a1a9ad" stroke-width="1"/>
   <path d="M0 250H330" stroke="#a1a9ad" stroke-width="1"/>
   <path d="M0 310H330" stroke="#a1a9ad" stroke-width="1"/>
-  <path d="M20 50H310V184H20Z" fill="none" stroke="#b7bbb7" stroke-width="1"/>
-  <path d="M21 51H309V183H21Z" fill="none" stroke="#f5f6f2" stroke-width="1"/>
+  <path d="M20 18H310V184H20Z" fill="none" stroke="#b7bbb7" stroke-width="1"/>
+  <path d="M21 19H309V183H21Z" fill="none" stroke="#f5f6f2" stroke-width="1"/>
   <path d="M18 260H312V304H18Z" fill="none" stroke="#b5bec2" stroke-width="1"/>
   <path d="M19 261H311V303H19Z" fill="none" stroke="#f6fafb" stroke-width="1"/>
   <path d="M20 322H310V366H20Z" fill="none" stroke="#a6aba8" stroke-width="1"/>

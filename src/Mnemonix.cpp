@@ -113,13 +113,10 @@ struct MnemonixLabelOverlay : TransparentWidget {
         const NVGcolor soft = nvgRGB(80, 88, 96);
         const NVGcolor blue = nvgRGB(20, 92, 132);
 
-        drawLabel(args, Vec(165, 18), "MNEMONIX", 18.f, dark);
-        drawLabel(args, Vec(165, 35), "SHORTWAV LABS  BBD MEMORY DELAY", 8.f, soft);
-
         const char* mainLabels[] = {"LEVEL", "BLEND", "FEED", "DELAY", "DEPTH"};
         const float xs[] = {47.f, 106.f, 165.f, 224.f, 283.f};
         for (int i = 0; i < 5; ++i) {
-            drawLabel(args, Vec(xs[i], 109), mainLabels[i], 8.5f, dark);
+            drawLabel(args, Vec(xs[i], 96), mainLabels[i], 8.5f, dark);
             drawLabel(args, Vec(xs[i], 140), "CV", 7.5f, soft);
             drawLabel(args, Vec(xs[i], 175), "IN", 7.5f, soft);
         }
@@ -488,11 +485,11 @@ MnemonixWidget::MnemonixWidget(Mnemonix* module) {
     addChild(labels);
 
     const float xs[] = {47.f, 106.f, 165.f, 224.f, 283.f};
-    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[0], 75), module, Mnemonix::LEVEL_PARAM));
-    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[1], 75), module, Mnemonix::BLEND_PARAM));
-    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[2], 75), module, Mnemonix::FEEDBACK_PARAM));
-    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[3], 75), module, Mnemonix::DELAY_PARAM));
-    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[4], 75), module, Mnemonix::DEPTH_PARAM));
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[0], 55), module, Mnemonix::LEVEL_PARAM));
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[1], 55), module, Mnemonix::BLEND_PARAM));
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[2], 55), module, Mnemonix::FEEDBACK_PARAM));
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[3], 55), module, Mnemonix::DELAY_PARAM));
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[4], 55), module, Mnemonix::DEPTH_PARAM));
 
     addParam(createParamCentered<Trimpot>(Vec(xs[0], 125), module, Mnemonix::LEVEL_CV_ATT_PARAM));
     addParam(createParamCentered<Trimpot>(Vec(xs[1], 125), module, Mnemonix::BLEND_CV_ATT_PARAM));
