@@ -117,37 +117,37 @@ struct MnemonixLabelOverlay : TransparentWidget {
         drawLabel(args, Vec(165, 35), "SHORTWAV LABS  BBD MEMORY DELAY", 8.f, soft);
 
         const char* mainLabels[] = {"LEVEL", "BLEND", "FEED", "DELAY", "DEPTH"};
-        const float xs[] = {45.f, 105.f, 165.f, 225.f, 285.f};
+        const float xs[] = {47.f, 106.f, 165.f, 224.f, 283.f};
         for (int i = 0; i < 5; ++i) {
-            drawLabel(args, Vec(xs[i], 104), mainLabels[i], 8.5f, dark);
-            drawLabel(args, Vec(xs[i], 132), "CV", 7.5f, soft);
-            drawLabel(args, Vec(xs[i], 174), "IN", 7.5f, soft);
+            drawLabel(args, Vec(xs[i], 109), mainLabels[i], 8.5f, dark);
+            drawLabel(args, Vec(xs[i], 145), "CV", 7.5f, soft);
+            drawLabel(args, Vec(xs[i], 181), "IN", 7.5f, soft);
         }
 
-        drawLabel(args, Vec(35, 216), "CH/VB", 7.5f, dark);
-        drawLabel(args, Vec(70, 216), "GATE", 7.5f, soft);
-        drawLabel(args, Vec(110, 216), "TRI/SQ", 7.5f, dark);
-        drawLabel(args, Vec(145, 216), "GATE", 7.5f, soft);
-        drawLabel(args, Vec(185, 216), "RANGE", 7.5f, dark);
-        drawLabel(args, Vec(220, 216), "GATE", 7.5f, soft);
-        drawLabel(args, Vec(260, 216), "BYPASS", 7.5f, dark);
-        drawLabel(args, Vec(295, 216), "GATE", 7.5f, soft);
+        drawLabel(args, Vec(37, 197), "CH/VB", 7.5f, dark);
+        drawLabel(args, Vec(73, 197), "GATE", 7.5f, soft);
+        drawLabel(args, Vec(111, 197), "TRI/SQ", 7.5f, dark);
+        drawLabel(args, Vec(147, 197), "GATE", 7.5f, soft);
+        drawLabel(args, Vec(185, 197), "RANGE", 7.5f, dark);
+        drawLabel(args, Vec(221, 197), "GATE", 7.5f, soft);
+        drawLabel(args, Vec(259, 197), "BYPASS", 7.5f, dark);
+        drawLabel(args, Vec(295, 197), "GATE", 7.5f, soft);
 
         const char* outLabels[] = {"LVL", "BLD", "FB", "DLY", "DPT", "MOD", "LFO", "RNG", "ON"};
-        const float outXs[] = {30.f, 65.f, 100.f, 135.f, 170.f, 205.f, 240.f, 275.f, 310.f};
+        const float outXs[] = {32.f, 65.f, 98.f, 132.f, 165.f, 198.f, 232.f, 265.f, 298.f};
         for (int i = 0; i < 9; ++i) {
-            drawLabel(args, Vec(outXs[i], 286), outLabels[i], 7.f, blue);
+            drawLabel(args, Vec(outXs[i], 296), outLabels[i], 7.f, blue);
         }
-        drawLabel(args, Vec(165, 300), "CONTROL OUTS", 7.5f, soft);
+        drawLabel(args, Vec(165, 254), "CONTROL OUTS", 7.5f, soft);
 
-        drawLabel(args, Vec(35, 356), "IN", 7.5f, dark);
-        drawLabel(args, Vec(75, 356), "TAP", 7.5f, dark);
-        drawLabel(args, Vec(115, 356), "DIRECT", 7.f, dark);
-        drawLabel(args, Vec(155, 356), "WET", 7.5f, dark);
-        drawLabel(args, Vec(200, 356), "CLK", 7.5f, dark);
-        drawLabel(args, Vec(240, 356), "/512", 7.f, dark);
-        drawLabel(args, Vec(280, 356), "ENV", 7.5f, dark);
-        drawLabel(args, Vec(315, 356), "OUT", 7.5f, dark);
+        drawLabel(args, Vec(32, 360), "IN", 7.5f, dark);
+        drawLabel(args, Vec(70, 360), "TAP", 7.5f, dark);
+        drawLabel(args, Vec(108, 360), "DIRECT", 7.f, dark);
+        drawLabel(args, Vec(146, 360), "WET", 7.5f, dark);
+        drawLabel(args, Vec(184, 360), "CLK", 7.5f, dark);
+        drawLabel(args, Vec(222, 360), "/512", 7.f, dark);
+        drawLabel(args, Vec(260, 360), "ENV", 7.5f, dark);
+        drawLabel(args, Vec(298, 360), "OUT", 7.5f, dark);
     }
 };
 
@@ -487,59 +487,59 @@ MnemonixWidget::MnemonixWidget(Mnemonix* module) {
     labels->box.size = box.size;
     addChild(labels);
 
-    const float xs[] = {45.f, 105.f, 165.f, 225.f, 285.f};
-    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[0], 72), module, Mnemonix::LEVEL_PARAM));
-    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[1], 72), module, Mnemonix::BLEND_PARAM));
-    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[2], 72), module, Mnemonix::FEEDBACK_PARAM));
-    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[3], 72), module, Mnemonix::DELAY_PARAM));
-    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[4], 72), module, Mnemonix::DEPTH_PARAM));
+    const float xs[] = {47.f, 106.f, 165.f, 224.f, 283.f};
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[0], 75), module, Mnemonix::LEVEL_PARAM));
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[1], 75), module, Mnemonix::BLEND_PARAM));
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[2], 75), module, Mnemonix::FEEDBACK_PARAM));
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[3], 75), module, Mnemonix::DELAY_PARAM));
+    addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[4], 75), module, Mnemonix::DEPTH_PARAM));
 
-    addParam(createParamCentered<Trimpot>(Vec(xs[0], 124), module, Mnemonix::LEVEL_CV_ATT_PARAM));
-    addParam(createParamCentered<Trimpot>(Vec(xs[1], 124), module, Mnemonix::BLEND_CV_ATT_PARAM));
-    addParam(createParamCentered<Trimpot>(Vec(xs[2], 124), module, Mnemonix::FEEDBACK_CV_ATT_PARAM));
-    addParam(createParamCentered<Trimpot>(Vec(xs[3], 124), module, Mnemonix::DELAY_CV_ATT_PARAM));
-    addParam(createParamCentered<Trimpot>(Vec(xs[4], 124), module, Mnemonix::DEPTH_CV_ATT_PARAM));
+    addParam(createParamCentered<Trimpot>(Vec(xs[0], 130), module, Mnemonix::LEVEL_CV_ATT_PARAM));
+    addParam(createParamCentered<Trimpot>(Vec(xs[1], 130), module, Mnemonix::BLEND_CV_ATT_PARAM));
+    addParam(createParamCentered<Trimpot>(Vec(xs[2], 130), module, Mnemonix::FEEDBACK_CV_ATT_PARAM));
+    addParam(createParamCentered<Trimpot>(Vec(xs[3], 130), module, Mnemonix::DELAY_CV_ATT_PARAM));
+    addParam(createParamCentered<Trimpot>(Vec(xs[4], 130), module, Mnemonix::DEPTH_CV_ATT_PARAM));
 
-    addInput(createInputCentered<PJ301MPort>(Vec(xs[0], 158), module, Mnemonix::LEVEL_CV_INPUT));
-    addInput(createInputCentered<PJ301MPort>(Vec(xs[1], 158), module, Mnemonix::BLEND_CV_INPUT));
-    addInput(createInputCentered<PJ301MPort>(Vec(xs[2], 158), module, Mnemonix::FEEDBACK_CV_INPUT));
-    addInput(createInputCentered<PJ301MPort>(Vec(xs[3], 158), module, Mnemonix::DELAY_CV_INPUT));
-    addInput(createInputCentered<PJ301MPort>(Vec(xs[4], 158), module, Mnemonix::DEPTH_CV_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(xs[0], 166), module, Mnemonix::LEVEL_CV_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(xs[1], 166), module, Mnemonix::BLEND_CV_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(xs[2], 166), module, Mnemonix::FEEDBACK_CV_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(xs[3], 166), module, Mnemonix::DELAY_CV_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(xs[4], 166), module, Mnemonix::DEPTH_CV_INPUT));
 
-    addParam(createParamCentered<CKSS>(Vec(35, 202), module, Mnemonix::MODE_PARAM));
-    addInput(createInputCentered<PJ301MPort>(Vec(70, 202), module, Mnemonix::MODE_CV_INPUT));
-    addParam(createParamCentered<CKSS>(Vec(110, 202), module, Mnemonix::SHAPE_PARAM));
-    addInput(createInputCentered<PJ301MPort>(Vec(145, 202), module, Mnemonix::SHAPE_CV_INPUT));
-    addParam(createParamCentered<CKSS>(Vec(185, 202), module, Mnemonix::LONG_PARAM));
-    addInput(createInputCentered<PJ301MPort>(Vec(220, 202), module, Mnemonix::LONG_CV_INPUT));
-    addParam(createParamCentered<CKSS>(Vec(260, 202), module, Mnemonix::ENGAGE_PARAM));
-    addInput(createInputCentered<PJ301MPort>(Vec(295, 202), module, Mnemonix::ENGAGE_CV_INPUT));
+    addParam(createParamCentered<CKSS>(Vec(37, 215), module, Mnemonix::MODE_PARAM));
+    addInput(createInputCentered<PJ301MPort>(Vec(73, 215), module, Mnemonix::MODE_CV_INPUT));
+    addParam(createParamCentered<CKSS>(Vec(111, 215), module, Mnemonix::SHAPE_PARAM));
+    addInput(createInputCentered<PJ301MPort>(Vec(147, 215), module, Mnemonix::SHAPE_CV_INPUT));
+    addParam(createParamCentered<CKSS>(Vec(185, 215), module, Mnemonix::LONG_PARAM));
+    addInput(createInputCentered<PJ301MPort>(Vec(221, 215), module, Mnemonix::LONG_CV_INPUT));
+    addParam(createParamCentered<CKSS>(Vec(259, 215), module, Mnemonix::ENGAGE_PARAM));
+    addInput(createInputCentered<PJ301MPort>(Vec(295, 215), module, Mnemonix::ENGAGE_CV_INPUT));
 
-    addChild(createLightCentered<MediumLight<RedLight>>(Vec(25, 226), module, Mnemonix::OVERLOAD_LIGHT));
-    addChild(createLightCentered<SmallLight<YellowLight>>(Vec(86, 226), module, Mnemonix::VIBRATO_LIGHT));
-    addChild(createLightCentered<SmallLight<YellowLight>>(Vec(160, 226), module, Mnemonix::SQUARE_LIGHT));
-    addChild(createLightCentered<SmallLight<BlueLight>>(Vec(235, 226), module, Mnemonix::LONG_LIGHT));
-    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(310, 226), module, Mnemonix::STATUS_LIGHT));
+    addChild(createLightCentered<MediumLight<RedLight>>(Vec(32, 238), module, Mnemonix::OVERLOAD_LIGHT));
+    addChild(createLightCentered<SmallLight<YellowLight>>(Vec(98, 238), module, Mnemonix::VIBRATO_LIGHT));
+    addChild(createLightCentered<SmallLight<YellowLight>>(Vec(165, 238), module, Mnemonix::SQUARE_LIGHT));
+    addChild(createLightCentered<SmallLight<BlueLight>>(Vec(232, 238), module, Mnemonix::LONG_LIGHT));
+    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(298, 238), module, Mnemonix::STATUS_LIGHT));
 
-    const float outXs[] = {30.f, 65.f, 100.f, 135.f, 170.f, 205.f, 240.f, 275.f, 310.f};
-    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[0], 268), module, Mnemonix::LEVEL_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[1], 268), module, Mnemonix::BLEND_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[2], 268), module, Mnemonix::FEEDBACK_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[3], 268), module, Mnemonix::DELAY_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[4], 268), module, Mnemonix::DEPTH_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[5], 268), module, Mnemonix::MODE_GATE_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[6], 268), module, Mnemonix::SHAPE_LFO_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[7], 268), module, Mnemonix::LONG_GATE_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[8], 268), module, Mnemonix::ENGAGE_GATE_OUTPUT));
+    const float outXs[] = {32.f, 65.f, 98.f, 132.f, 165.f, 198.f, 232.f, 265.f, 298.f};
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[0], 276), module, Mnemonix::LEVEL_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[1], 276), module, Mnemonix::BLEND_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[2], 276), module, Mnemonix::FEEDBACK_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[3], 276), module, Mnemonix::DELAY_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[4], 276), module, Mnemonix::DEPTH_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[5], 276), module, Mnemonix::MODE_GATE_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[6], 276), module, Mnemonix::SHAPE_LFO_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[7], 276), module, Mnemonix::LONG_GATE_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[8], 276), module, Mnemonix::ENGAGE_GATE_OUTPUT));
 
-    addInput(createInputCentered<PJ301MPort>(Vec(35, 334), module, Mnemonix::AUDIO_INPUT));
-    addInput(createInputCentered<PJ301MPort>(Vec(75, 334), module, Mnemonix::TAP_CV_INPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(115, 334), module, Mnemonix::DIRECT_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(155, 334), module, Mnemonix::WET_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(200, 334), module, Mnemonix::CLOCK_GATE_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(240, 334), module, Mnemonix::CLOCK_DIV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(280, 334), module, Mnemonix::ENVELOPE_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(315, 334), module, Mnemonix::AUDIO_OUTPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(32, 337), module, Mnemonix::AUDIO_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(70, 337), module, Mnemonix::TAP_CV_INPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(108, 337), module, Mnemonix::DIRECT_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(146, 337), module, Mnemonix::WET_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(184, 337), module, Mnemonix::CLOCK_GATE_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(222, 337), module, Mnemonix::CLOCK_DIV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(260, 337), module, Mnemonix::ENVELOPE_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(298, 337), module, Mnemonix::AUDIO_OUTPUT));
 }
 
 void MnemonixWidget::appendContextMenu(Menu* menu) {
