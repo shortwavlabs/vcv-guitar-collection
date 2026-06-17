@@ -86,15 +86,6 @@ struct Mnemonix : Module {
         STEREO_PING_PONG
     };
 
-    enum LightId {
-        OVERLOAD_LIGHT,
-        STATUS_LIGHT,
-        VIBRATO_LIGHT,
-        SQUARE_LIGHT,
-        LONG_LIGHT,
-        LIGHTS_LEN
-    };
-
     std::array<MnemonixDSP, 16> engines;
     float currentSampleRate = 0.f;
     bool sampleRateInitialized = false;

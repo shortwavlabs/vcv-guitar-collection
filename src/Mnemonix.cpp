@@ -99,59 +99,10 @@ struct DelayTimeQuantity : engine::ParamQuantity {
     }
 };
 
-struct MnemonixLabelOverlay : TransparentWidget {
-    void drawLabel(const DrawArgs& args, Vec pos, const char* text, float size = 9.f, NVGcolor color = nvgRGB(28, 28, 30)) {
-        nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-        nvgFontSize(args.vg, size);
-        nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        nvgFillColor(args.vg, color);
-        nvgText(args.vg, pos.x, pos.y, text, NULL);
-    }
-
-    void draw(const DrawArgs& args) override {
-        const NVGcolor dark = nvgRGB(26, 28, 31);
-        const NVGcolor soft = nvgRGB(80, 88, 96);
-        const NVGcolor blue = nvgRGB(20, 92, 132);
-
-        const char* mainLabels[] = {"LEVEL", "BLEND", "FEED", "DELAY", "DEPTH"};
-        const float xs[] = {47.f, 106.f, 165.f, 224.f, 283.f};
-        for (int i = 0; i < 5; ++i) {
-            drawLabel(args, Vec(xs[i], 96), mainLabels[i], 8.5f, dark);
-            drawLabel(args, Vec(xs[i], 140), "CV", 7.5f, soft);
-            drawLabel(args, Vec(xs[i], 175), "IN", 7.5f, soft);
-        }
-
-        drawLabel(args, Vec(37, 197), "CH/VB", 7.5f, dark);
-        drawLabel(args, Vec(73, 197), "GATE", 7.5f, soft);
-        drawLabel(args, Vec(111, 197), "TRI/SQ", 7.5f, dark);
-        drawLabel(args, Vec(147, 197), "GATE", 7.5f, soft);
-        drawLabel(args, Vec(185, 197), "RANGE", 7.5f, dark);
-        drawLabel(args, Vec(221, 197), "GATE", 7.5f, soft);
-        drawLabel(args, Vec(259, 197), "BYPASS", 7.5f, dark);
-        drawLabel(args, Vec(295, 197), "GATE", 7.5f, soft);
-
-        const char* outLabels[] = {"LVL", "BLD", "FB", "DLY", "DPT", "MOD", "LFO", "RNG", "ON"};
-        const float outXs[] = {32.f, 65.f, 98.f, 132.f, 165.f, 198.f, 232.f, 265.f, 298.f};
-        for (int i = 0; i < 9; ++i) {
-            drawLabel(args, Vec(outXs[i], 296), outLabels[i], 7.f, blue);
-        }
-        drawLabel(args, Vec(165, 254), "CONTROL OUTS", 7.5f, soft);
-
-        drawLabel(args, Vec(32, 360), "IN", 7.5f, dark);
-        drawLabel(args, Vec(70, 360), "TAP", 7.5f, dark);
-        drawLabel(args, Vec(108, 360), "DIRECT", 7.f, dark);
-        drawLabel(args, Vec(146, 360), "WET", 7.5f, dark);
-        drawLabel(args, Vec(184, 360), "CLK", 7.5f, dark);
-        drawLabel(args, Vec(222, 360), "/512", 7.f, dark);
-        drawLabel(args, Vec(260, 360), "ENV", 7.5f, dark);
-        drawLabel(args, Vec(298, 360), "OUT", 7.5f, dark);
-    }
-};
-
 } // namespace
 
 Mnemonix::Mnemonix() {
-    config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
+    config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, 0);
 
     configParam(LEVEL_PARAM, 0.f, 1.f, 0.55f, "Level", "%", 0.f, 100.f);
     configParam(BLEND_PARAM, 0.f, 1.f, 0.5f, "Blend", "%", 0.f, 100.f);
@@ -265,7 +216,6 @@ void Mnemonix::process(const ProcessArgs& args) {
         outputs[WET_OUTPUT].setChannels(channels);
     }
 
-    float overload = 0.f;
     float lfoOutput = 0.f;
     float clockGate = 0.f;
     float clockDivGate = 0.f;
@@ -332,7 +282,6 @@ void Mnemonix::process(const ProcessArgs& args) {
         if (outputs[WET_OUTPUT].isConnected()) {
             outputs[WET_OUTPUT].setVoltage(finiteClamp(wet * 5.f, -12.f, 12.f), c);
         }
-        overload = std::max(overload, result.overload);
         if (c == 0 && std::isfinite(result.lfo)) {
             lfoOutput = result.lfo;
             clockGate = result.clockGate;
@@ -354,11 +303,6 @@ void Mnemonix::process(const ProcessArgs& args) {
     if (outputs[CLOCK_DIV_OUTPUT].isConnected()) outputs[CLOCK_DIV_OUTPUT].setVoltage(clockDivGate >= 0.5f ? 10.f : 0.f);
     if (outputs[ENVELOPE_CV_OUTPUT].isConnected()) outputs[ENVELOPE_CV_OUTPUT].setVoltage(outputControlVoltage(envelope));
 
-    lights[OVERLOAD_LIGHT].setBrightnessSmooth(overload, args.sampleTime);
-    lights[STATUS_LIGHT].setBrightnessSmooth(dspParams.engaged ? 1.f : 0.f, args.sampleTime);
-    lights[VIBRATO_LIGHT].setBrightnessSmooth(dspParams.vibrato ? 1.f : 0.f, args.sampleTime);
-    lights[SQUARE_LIGHT].setBrightnessSmooth(dspParams.squareLfo ? 1.f : 0.f, args.sampleTime);
-    lights[LONG_LIGHT].setBrightnessSmooth(dspParams.longDelay ? 1.f : 0.f, args.sampleTime);
 }
 
 void Mnemonix::onSampleRateChange(const SampleRateChangeEvent& e) {
@@ -479,11 +423,6 @@ MnemonixWidget::MnemonixWidget(Mnemonix* module) {
     addChild(createWidget<ScrewSilver>(Vec(0, 0)));
     addChild(createWidget<ScrewSilver>(Vec(box.size.x - RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-    MnemonixLabelOverlay* labels = new MnemonixLabelOverlay();
-    labels->box.pos = Vec(0, 0);
-    labels->box.size = box.size;
-    addChild(labels);
-
     const float xs[] = {47.f, 106.f, 165.f, 224.f, 283.f};
     addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[0], 55), module, Mnemonix::LEVEL_PARAM));
     addParam(createParamCentered<Davies1900hLargeBlackKnob>(Vec(xs[1], 55), module, Mnemonix::BLEND_PARAM));
@@ -512,12 +451,6 @@ MnemonixWidget::MnemonixWidget(Mnemonix* module) {
     addParam(createParamCentered<CKSS>(Vec(259, 215), module, Mnemonix::ENGAGE_PARAM));
     addInput(createInputCentered<PJ301MPort>(Vec(295, 215), module, Mnemonix::ENGAGE_CV_INPUT));
 
-    addChild(createLightCentered<MediumLight<RedLight>>(Vec(32, 238), module, Mnemonix::OVERLOAD_LIGHT));
-    addChild(createLightCentered<SmallLight<YellowLight>>(Vec(98, 238), module, Mnemonix::VIBRATO_LIGHT));
-    addChild(createLightCentered<SmallLight<YellowLight>>(Vec(165, 238), module, Mnemonix::SQUARE_LIGHT));
-    addChild(createLightCentered<SmallLight<BlueLight>>(Vec(232, 238), module, Mnemonix::LONG_LIGHT));
-    addChild(createLightCentered<MediumLight<GreenLight>>(Vec(298, 238), module, Mnemonix::STATUS_LIGHT));
-
     const float outXs[] = {32.f, 65.f, 98.f, 132.f, 165.f, 198.f, 232.f, 265.f, 298.f};
     addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[0], 276), module, Mnemonix::LEVEL_CV_OUTPUT));
     addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[1], 276), module, Mnemonix::BLEND_CV_OUTPUT));
@@ -529,14 +462,14 @@ MnemonixWidget::MnemonixWidget(Mnemonix* module) {
     addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[7], 276), module, Mnemonix::LONG_GATE_OUTPUT));
     addOutput(createOutputCentered<PJ301MPort>(Vec(outXs[8], 276), module, Mnemonix::ENGAGE_GATE_OUTPUT));
 
-    addInput(createInputCentered<PJ301MPort>(Vec(32, 337), module, Mnemonix::AUDIO_INPUT));
-    addInput(createInputCentered<PJ301MPort>(Vec(70, 337), module, Mnemonix::TAP_CV_INPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(108, 337), module, Mnemonix::DIRECT_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(146, 337), module, Mnemonix::WET_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(184, 337), module, Mnemonix::CLOCK_GATE_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(222, 337), module, Mnemonix::CLOCK_DIV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(260, 337), module, Mnemonix::ENVELOPE_CV_OUTPUT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(298, 337), module, Mnemonix::AUDIO_OUTPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(32, 320), module, Mnemonix::AUDIO_INPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(70, 320), module, Mnemonix::TAP_CV_INPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(108, 320), module, Mnemonix::DIRECT_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(146, 320), module, Mnemonix::WET_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(184, 320), module, Mnemonix::CLOCK_GATE_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(222, 320), module, Mnemonix::CLOCK_DIV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(260, 320), module, Mnemonix::ENVELOPE_CV_OUTPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(298, 320), module, Mnemonix::AUDIO_OUTPUT));
 }
 
 void MnemonixWidget::appendContextMenu(Menu* menu) {
