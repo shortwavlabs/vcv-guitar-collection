@@ -18,6 +18,12 @@
       "tags": ["Effect", "Distortion", "Equalizer"]
     },
     {
+      "slug": "NamFxLoop",
+      "name": "NAM FX Loop",
+      "description": "4HP send/return effects loop expander for NAM Player with dry/wet blend",
+      "tags": ["Expander", "Effect"]
+    },
+    {
       "slug": "CabSim",
       "name": "Cabinet Simulator",
       "description": "Convolution-based cabinet simulator with dual IR loading, blending, and tone shaping filters",
@@ -26,7 +32,7 @@
     {
       "slug": "Mnemonix",
       "name": "Mnemonix",
-      "description": "Rev_D MN3008-inspired analog BBD memory delay with chorus, vibrato, compander drive, and authentic clock artifacts",
+      "description": "Analog-style BBD memory delay with chorus, vibrato, compander drive, and authentic clock artifacts",
       "tags": ["Delay", "Effect", "Chorus"]
     }
   ]

@@ -7,6 +7,7 @@ void init(Plugin* p) {
 
 	// Add modules here
 	p->addModel(modelNamPlayer);
+	p->addModel(modelNamFxLoop);
 	p->addModel(modelCabSim);
 	p->addModel(modelMnemonix);
 }

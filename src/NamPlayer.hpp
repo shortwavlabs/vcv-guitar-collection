@@ -1,6 +1,7 @@
 #pragma once
 
 #include "plugin.hpp"
+#include "NamFxLoopExpander.hpp"
 #include "dsp/Nam.h"
 
 #include <memory>
@@ -106,6 +107,7 @@ struct NamPlayer : Module {
     
     void process(const ProcessArgs& args) override;
     void onSampleRateChange(const SampleRateChangeEvent& e) override;
+    float processFxLoopExpander(float dryVoltage);
     
     void loadModel(const std::string& path);
     void unloadModel();

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="60" height="380" viewBox="0 0 60 380" xmlns="http://www.w3.org/2000/svg">
+  <rect width="60" height="380" fill="#929292"/>
+  <path fill="#d5d5d5" d="M-86 60L146-26v86L-86 146zM-86 190L146 104v86L-86 276zM14 362l132 49v-86L14 276z"/>
+  <rect x="0" y="0" width="60" height="380" fill="none" stroke="#151515" stroke-opacity="0.18"/>
+  <g fill="#151515" font-family="Arial, Helvetica, sans-serif" font-weight="700" text-anchor="middle">
+    <text x="30" y="35" font-size="9">NAM</text>
+    <text x="30" y="48" font-size="9">FX LOOP</text>
+    <text x="30" y="82" font-size="7">DRY/WET</text>
+    <text x="15" y="142" font-size="6">DRY</text>
+    <text x="45" y="142" font-size="6">WET</text>
+    <text x="30" y="174" font-size="6">LINK</text>
+    <text x="30" y="184" font-size="8">SEND</text>
+    <text x="30" y="260" font-size="8">RETURN</text>
+  </g>
+  <g fill="#151515" opacity="0.95">
+    <path d="M28.873 373.961h-4.256l-4.255-11.381h4.255z"/>
+    <path d="M31.743 373.961h-1.484l-4.256-11.381h4.256l2.865 7.662z"/>
+    <path d="M38.06 368.45l2.194-5.87h-4.255l-2.194 5.868z"/>
+    <path d="M34.466 361.038h-4.054s-.03-2.189-3.101-2.189c-3.071 0-3.002 2.681-3.002 2.681h-4.054S20.103 355 27.279 355c7.175 0 7.187 6.038 7.187 6.038z"/>
+  </g>
+</svg>
