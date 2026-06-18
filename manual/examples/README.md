@@ -21,6 +21,19 @@ Simple guitar processing chain suitable for beginners.
 
 ---
 
+#### [mnemonix-memory-delay.md](mnemonix-memory-delay.md)
+Analog-style delay, chorus, vibrato, and feedback using Mnemonix.
+
+**Contents:**
+- Basic post-cabinet delay patch
+- Chorus delay and wet vibrato variations
+- Tap-synced dub throw setup
+- Utility CV output ideas
+
+**Difficulty:** Beginner to Intermediate
+
+---
+
 #### [clean-tone-setup.md](clean-tone-setup.md)
 Creating crystal-clear clean guitar tones.
 
@@ -165,6 +178,7 @@ Optimized patches for live use.
 | Example | Difficulty | Modules | CPU | Best For |
 |---------|------------|---------|-----|----------|
 | Basic Guitar Rig | Beginner | 3-4 | Low | Learning basics |
+| Mnemonix Memory Delay | Beginner-Intermediate | 4-6 | Low-Med | Delay, chorus, vibrato |
 | Clean Tone | Beginner | 4-6 | Low | Clean players |
 | High-Gain Metal | Intermediate | 5-8 | Medium | Metal/rock |
 | Dual Amp | Advanced | 8-12 | High | Studio production |
@@ -184,8 +198,9 @@ Optimized patches for live use.
 
 Start with:
 1. [Basic Guitar Rig](basic-guitar-rig.md)
-2. [Clean Tone Setup](clean-tone-setup.md)
-3. Work through the Quickstart Guide
+2. [Mnemonix Memory Delay](mnemonix-memory-delay.md)
+3. [Clean Tone Setup](clean-tone-setup.md)
+4. Work through the Quickstart Guide
 
 ### For Experienced Users
 

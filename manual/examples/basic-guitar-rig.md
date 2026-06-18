@@ -23,6 +23,8 @@ Guitar → Audio Input → NAM Player → Cabinet Simulator → Audio Output
    - Amplifier simulation
 3. **Cabinet Simulator** (Guitar Tools)
    - Speaker cabinet emulation
+4. **Mnemonix** (optional, Guitar Tools)
+   - Analog-style delay, chorus, and vibrato
 
 ---
 
@@ -167,6 +169,35 @@ Adjust **Cabinet Sim OUTPUT** to:
 - Leave headroom (-6dB to -3dB peak)
 
 **Tip:** Use VCV VU meters or interface meters to check levels.
+
+---
+
+## Optional: Add Mnemonix Delay
+
+Patch Mnemonix after Cabinet Simulator for a clean rack-style delay:
+
+```text
+NAM Player OUT -> Cabinet Simulator IN
+Cabinet Simulator OUT -> Mnemonix Audio
+Mnemonix Audio -> Audio-8 INPUT 1
+```
+
+Start with:
+
+```text
+Level: 55%
+Blend: 30%
+Feedback: 20%
+Delay: 100 ms
+Depth: 0-10%
+Mode: Chorus
+Shape: Triangle
+Range: Normal
+```
+
+For a pedalboard-style feel, move Mnemonix before NAM Player so the repeats hit the amp model.
+
+See [Mnemonix Memory Delay](mnemonix-memory-delay.md) for chorus, vibrato, tap-sync, and feedback examples.
 
 ---
 
