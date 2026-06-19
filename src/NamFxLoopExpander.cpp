@@ -12,7 +12,7 @@ float sanitizeVoltage(float voltage) {
 NamFxLoopExpander::NamFxLoopExpander() {
     config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
-    configParam(BLEND_PARAM, 0.f, 1.f, 1.f, "Dry/Wet Blend", "%", 0.f, 100.f);
+    configParam(BLEND_PARAM, 0.f, 1.f, .5f, "Dry/Wet Blend", "%", 0.f, 100.f);
     configInput(RETURN_INPUT, "Return");
     configOutput(SEND_OUTPUT, "Send");
     configLight(LINK_LIGHT, "NAM Player link");
@@ -73,14 +73,12 @@ NamFxLoopExpanderWidget::NamFxLoopExpanderWidget(NamFxLoopExpander* module) {
     const float centerX = box.size.x / 2.f;
 
     addChild(createWidget<ScrewSilver>(Vec(0, 0)));
-    addChild(createWidget<ScrewSilver>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));
-    addChild(createWidget<ScrewSilver>(Vec(0, box.size.y - RACK_GRID_WIDTH)));
-    addChild(createWidget<ScrewSilver>(Vec(box.size.x - RACK_GRID_WIDTH, box.size.y - RACK_GRID_WIDTH)));
+    addChild(createWidget<ScrewSilver>(Vec(box.size.x - RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-    addParam(createParamCentered<RoundBlackKnob>(Vec(centerX, 112.f), module, NamFxLoopExpander::BLEND_PARAM));
-    addChild(createLightCentered<SmallLight<GreenLight>>(Vec(centerX, 158.f), module, NamFxLoopExpander::LINK_LIGHT));
-    addOutput(createOutputCentered<PJ301MPort>(Vec(centerX, 210.f), module, NamFxLoopExpander::SEND_OUTPUT));
-    addInput(createInputCentered<PJ301MPort>(Vec(centerX, 286.f), module, NamFxLoopExpander::RETURN_INPUT));
+    addOutput(createOutputCentered<PJ301MPort>(Vec(centerX, 165.f), module, NamFxLoopExpander::SEND_OUTPUT));
+    addInput(createInputCentered<PJ301MPort>(Vec(centerX, 205.f), module, NamFxLoopExpander::RETURN_INPUT));
+    addParam(createParamCentered<RoundBlackKnob>(Vec(centerX, 280.f), module, NamFxLoopExpander::BLEND_PARAM));
+    addChild(createLightCentered<SmallLight<GreenLight>>(Vec(centerX, 340.f), module, NamFxLoopExpander::LINK_LIGHT));
 }
 
 Model* modelNamFxLoop = createModel<NamFxLoopExpander, NamFxLoopExpanderWidget>("NamFxLoop");
