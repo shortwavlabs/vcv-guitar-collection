@@ -23,7 +23,9 @@ Guitar → Audio Input → NAM Player → Cabinet Simulator → Audio Output
    - Amplifier simulation
 3. **Cabinet Simulator** (Guitar Tools)
    - Speaker cabinet emulation
-4. **Mnemonix** (optional, Guitar Tools)
+4. **NAM FX Loop** (optional, Guitar Tools)
+   - Send/return expander for effects between amp and cabinet
+5. **Mnemonix** (optional, Guitar Tools)
    - Analog-style delay, chorus, and vibrato
 
 ---
@@ -174,13 +176,16 @@ Adjust **Cabinet Sim OUTPUT** to:
 
 ## Optional: Add Mnemonix Delay
 
-Patch Mnemonix after Cabinet Simulator for a clean rack-style delay:
+Patch Mnemonix through NAM FX Loop for a clean amp-loop delay before the cabinet:
 
 ```text
 NAM Player OUT -> Cabinet Simulator IN
-Cabinet Simulator OUT -> Mnemonix Audio
-Mnemonix Audio -> Audio-8 INPUT 1
+Cabinet Simulator OUT -> Audio-8 INPUT 1
+NAM FX Loop SEND -> Mnemonix Audio
+Mnemonix Audio -> NAM FX Loop RETURN
 ```
+
+Place NAM FX Loop immediately to the right of NAM Player and confirm its green `LINK` light. Set Mnemonix `Blend` high or fully wet if you want the expander `DRY/WET` knob to control the delay amount.
 
 Start with:
 
@@ -339,9 +344,12 @@ Once comfortable with this basic rig:
 - Compressor
 
 **After Cabinet Sim:**
-- Delay (VCV Delay)
 - Reverb (VCV Reverb or external)
+
+**NAM FX Loop:**
+- Delay (Mnemonix or VCV Delay)
 - Modulation (Chorus, Phaser, Flanger)
+- Post-amp EQ
 
 ---
 

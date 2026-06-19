@@ -7,7 +7,7 @@ A practical analog-style delay, chorus, and feedback patch using Mnemonix.
 This patch adds Mnemonix to a basic guitar rig:
 
 ```text
-Guitar -> Audio Input -> NAM Player -> Cabinet Simulator -> Mnemonix -> Audio Output
+Guitar -> Audio Input -> NAM Player -> NAM FX Loop Send -> Mnemonix -> NAM FX Loop Return -> Cabinet Simulator -> Audio Output
 ```
 
 **Time to setup:** 10 minutes  
@@ -20,9 +20,10 @@ Guitar -> Audio Input -> NAM Player -> Cabinet Simulator -> Mnemonix -> Audio Ou
 
 1. **VCV Audio** (from Core)
 2. **NAM Player** (Guitar Tools)
-3. **Cabinet Simulator** (Guitar Tools)
-4. **Mnemonix** (Guitar Tools)
-5. Optional: **Limiter** for high-feedback experiments
+3. **NAM FX Loop** (Guitar Tools)
+4. **Cabinet Simulator** (Guitar Tools)
+5. **Mnemonix** (Guitar Tools)
+6. Optional: **Limiter** for high-feedback experiments
 
 ---
 
@@ -33,11 +34,12 @@ Guitar -> Audio Input -> NAM Player -> Cabinet Simulator -> Mnemonix -> Audio Ou
 ```text
 Audio-8 OUTPUT 1 -> NAM Player IN
 NAM Player OUT -> Cabinet Simulator IN
-Cabinet Simulator OUT -> Mnemonix Audio
-Mnemonix Audio -> Audio-8 INPUT 1
+Cabinet Simulator OUT -> Audio-8 INPUT 1
+NAM FX Loop SEND -> Mnemonix Audio
+Mnemonix Audio -> NAM FX Loop RETURN
 ```
 
-Use this order for a polished rack delay. For pedalboard behavior, place Mnemonix before NAM Player.
+Place NAM FX Loop immediately to the right of NAM Player and confirm the green `LINK` light. Use this order for a polished amp-loop delay that still feeds the cabinet. For pedalboard behavior, place Mnemonix before NAM Player.
 
 ### 2. Start with Safe Settings
 
@@ -54,6 +56,8 @@ Effect: Engaged
 ```
 
 Play a few short phrases and adjust `Blend` until repeats sit behind the dry tone.
+
+If you want NAM FX Loop to control the loop amount, set Mnemonix `Blend` close to `100%` wet and use the expander `DRY/WET` knob instead.
 
 ### 3. Set Feedback
 

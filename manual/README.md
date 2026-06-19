@@ -13,7 +13,7 @@ Welcome to the comprehensive documentation for **Guitar Tools** by Shortwav Labs
 ### 🚀 [Quickstart Guide](quickstart.md)
 **Start here if you're new!**
 
-Get up and running in 5 minutes. Learn the basics of NAM Player, Cabinet Simulator, and Mnemonix, dial in your first tone, and understand the fundamental concepts.
+Get up and running in 5 minutes. Learn the basics of NAM Player, the NAM FX Loop expander, Cabinet Simulator, and Mnemonix, dial in your first tone, and understand the fundamental concepts.
 
 **Perfect for:**
 - First-time users
@@ -117,7 +117,7 @@ Version history, release notes, and migration guides. Stay up to date with new f
 Guidelines for contributing to Guitar Tools. Learn how to report bugs, suggest features, or contribute code, models, and documentation.
 
 ### [Main README](../README.md)
-Plugin overview, installation instructions, and quick reference for both modules.
+Plugin overview, installation instructions, and quick reference for the module collection.
 
 ---
 
@@ -172,6 +172,7 @@ Plugin overview, installation instructions, and quick reference for both modules
 - [Your First Patch](quickstart.md#basic-setup) - Create a simple guitar rig
 - [Loading Models](quickstart.md#loading-models) - Browse and load NAM models
 - [Using Cabinet Sim](quickstart.md#cabinet-simulator-module) - Add speaker simulation
+- [Using NAM FX Loop](quickstart.md#nam-fx-loop-expander) - Insert effects between NAM Player and Cabinet Simulator
 - [Using Mnemonix](quickstart.md#mnemonix-module) - Add BBD delay, chorus, and vibrato
 - [Basic Guitar Rig Example](examples/basic-guitar-rig.md) - Complete walkthrough
 - [Mnemonix Memory Delay Example](examples/mnemonix-memory-delay.md) - Delay patch walkthrough
@@ -185,6 +186,12 @@ Plugin overview, installation instructions, and quick reference for both modules
 - [Use Fast Tanh](quickstart.md#use-fast-tanh-performance) - Activation performance toggle
 - [5-Band EQ](quickstart.md#tone-shaping-with-eq) - Shape your tone
 - [API: NamPlayer Class](api-reference.md#namplayer-module) - Technical reference
+
+### NAM FX Loop Expander
+- [Module Overview](../README.md#nam-fx-loop) - Placement, ports, blend, and link light
+- [Quickstart](quickstart.md#nam-fx-loop-expander) - Add send/return effects before Cabinet Simulator
+- [Mnemonix Guide](mnemonix.md#signal-flow) - Patch Mnemonix through the FX Loop
+- [API: NamFxLoopExpander Class](api-reference.md#namfxloopexpander-module) - Technical reference
 
 ### Cabinet Simulator
 - [Module Overview](../README.md#cabinet-simulator-module) - Features and controls

@@ -25,7 +25,7 @@ Simple guitar processing chain suitable for beginners.
 Analog-style delay, chorus, vibrato, and feedback using Mnemonix.
 
 **Contents:**
-- Basic post-cabinet delay patch
+- Basic NAM FX Loop delay patch
 - Chorus delay and wet vibrato variations
 - Tap-synced dub throw setup
 - Utility CV output ideas

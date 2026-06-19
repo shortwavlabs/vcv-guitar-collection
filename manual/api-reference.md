@@ -7,6 +7,7 @@ Complete technical reference for Guitar Tools plugin developers.
 - [Overview](#overview)
 - [Module Classes](#module-classes)
   - [NamPlayer Module](#namplayer-module)
+  - [NamFxLoopExpander Module](#namfxloopexpander-module)
   - [CabSim Module](#cabsim-module)
   - [Mnemonix Module](#mnemonix-module)
 - [DSP Classes](#dsp-classes)
@@ -27,6 +28,7 @@ The Guitar Tools plugin is built on VCV Rack's Module API and uses an in-tree NA
 ```
 plugin.cpp/hpp       - Plugin initialization and model registration
 ├── NamPlayer.cpp/hpp    - NAM Player module implementation
+├── NamFxLoopExpander.cpp/hpp - NAM Player send/return expander implementation
 ├── CabSim.cpp/hpp       - Cabinet Simulator module implementation
 ├── Mnemonix.cpp/hpp     - Mnemonix BBD delay module implementation
 └── dsp/
@@ -318,6 +320,70 @@ enum class WaveformColor {
     NUM_COLORS
 };
 ```
+
+---
+
+### NamFxLoopExpander Module
+
+4HP send/return expander for NAM Player. It is not a standalone audio processor; it communicates with a NAM Player immediately on its left through Rack's expander message buffers.
+
+#### Class Declaration
+
+```cpp
+struct NamFxLoopExpander : Module {
+    // Module implementation
+};
+```
+
+**Header File:** `src/NamFxLoopExpander.hpp`
+
+#### Parameters
+
+```cpp
+enum ParamId {
+    BLEND_PARAM,  // Dry/wet blend
+    PARAMS_LEN
+};
+```
+
+| Parameter | Min | Max | Default | Unit |
+|-----------|-----|-----|---------|------|
+| BLEND_PARAM | 0.0 | 1.0 | 1.0 | percent display |
+
+#### Inputs & Outputs
+
+```cpp
+enum InputId {
+    RETURN_INPUT,
+    INPUTS_LEN
+};
+
+enum OutputId {
+    SEND_OUTPUT,
+    OUTPUTS_LEN
+};
+```
+
+`SEND_OUTPUT` carries NAM Player's post-amp/post-output signal when linked. `RETURN_INPUT` is blended back into NAM Player's final output path. If `RETURN_INPUT` is unpatched, the expander normals to the dry signal.
+
+#### Lights
+
+```cpp
+enum LightId {
+    LINK_LIGHT,
+    LIGHTS_LEN
+};
+```
+
+`LINK_LIGHT` is green when the expander is immediately connected to NAM Player on its left.
+
+#### Processing Flow
+
+1. Check for NAM Player on the left expander side.
+2. Read the latest dry voltage from NAM Player.
+3. Send that voltage to `SEND_OUTPUT`.
+4. Blend dry voltage with `RETURN_INPUT` using `BLEND_PARAM`.
+5. Send the blended voltage back to NAM Player.
 
 ---
 
@@ -1062,6 +1128,16 @@ void appendContextMenu(Menu* menu) override;
 
 ---
 
+### NamFxLoopExpanderWidget
+
+UI widget for the NAM FX Loop expander.
+
+**Header File:** Defined in `src/NamFxLoopExpander.cpp`
+
+The widget provides one `DRY/WET` knob, `SEND` output, `RETURN` input, and a green `LINK` light.
+
+---
+
 ### MnemonixWidget
 
 UI widget for the Mnemonix module.
@@ -1111,6 +1187,7 @@ Loads a WAV file and returns sample data.
 ```cpp
 // From plugin.json
 NAM Player: ["Effect", "Distortion", "Equalizer"]
+NAM FX Loop: ["Expander", "Effect"]
 Cabinet Simulator: ["Effect", "Equalizer"]
 Mnemonix: ["Delay", "Effect", "Chorus"]
 ```

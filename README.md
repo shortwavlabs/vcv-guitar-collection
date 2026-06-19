@@ -1,17 +1,19 @@
 # Guitar Tools for VCV Rack
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Version](https://img.shields.io/badge/version-2.0.0-green.svg)](https://github.com/shortwavlabs/swv-guitar-collection/releases)
+[![Version](https://img.shields.io/badge/version-2.1.0-green.svg)](https://github.com/shortwavlabs/swv-guitar-collection/releases)
 [![VCV Rack](https://img.shields.io/badge/VCV%20Rack-2.6+-orange.svg)](https://vcvrack.com/)
 
-A professional guitar processing plugin collection for VCV Rack 2, featuring state-of-the-art neural amp modeling and convolution-based cabinet simulation. Transform your virtual guitar rig with authentic amp tones and speaker cabinet responses.
+A professional guitar processing plugin collection for VCV Rack 2, featuring state-of-the-art neural amp modeling, send/return effects routing, convolution-based cabinet simulation, and analog-style BBD memory delay. Transform your virtual guitar rig with authentic amp tones, speaker cabinet responses, and expressive delay/modulation.
 
 ## 🎸 Overview
 
-**Guitar Tools** by Shortwav Labs brings professional guitar amp and cabinet modeling to VCV Rack using cutting-edge technology:
+**Guitar Tools** by Shortwav Labs brings professional guitar amp, cabinet, and effects-loop processing to VCV Rack using cutting-edge technology:
 
 - **NAM Player**: Real-time neural network inference for highly accurate guitar amplifier, pedal, and preamp emulation using [Neural Amp Modeler](https://github.com/sdatkinson/neural-amp-modeler) technology
+- **NAM FX Loop**: Compact 4HP expander for NAM Player with send/return routing and a dry/wet blend, ideal for delay, chorus, vibrato, and modulation before cabinet simulation
 - **Cabinet Simulator**: Dual-slot convolution-based cabinet simulator with impulse response (IR) loading, blending, and advanced tone shaping
+- **Mnemonix**: Rev_D MN3008-inspired BBD memory delay with chorus, vibrato, tap/sync timing, stereo expansion, and modular utility outputs
 
 Whether you're creating guitar-driven patches, processing recorded guitars, or building complete virtual guitar rigs, Guitar Tools provides the essential building blocks for authentic guitar tone.
 
@@ -28,6 +30,13 @@ Whether you're creating guitar-driven patches, processing recorded guitars, or b
   - Output level control (-24dB to +24dB)
 - **Visual Feedback**: Output waveform display with customizable colors
 - **Easy Model Management**: Browse bundled presets or load custom models
+- **Expandable Effects Loop**: Add NAM FX Loop immediately to the right of NAM Player to insert external effects between the amp model and cabinet
+
+### NAM FX Loop Expander
+- **4HP Send/Return**: Patch NAM Player's post-amp signal out to pedals or Rack effects and return it before the main NAM output
+- **Dry/Wet Blend**: Mix the original NAM tone with the returned effect signal from the expander panel
+- **Safe Normaling**: With nothing patched to `RETURN`, the loop stays dry so adding the expander does not mute the rig
+- **Link Indicator**: Green `LINK` light confirms the expander is connected to NAM Player on its left
 
 ### Cabinet Simulator Module
 - **Dual IR Slots**: Load and blend two impulse responses simultaneously
@@ -36,6 +45,13 @@ Whether you're creating guitar-driven patches, processing recorded guitars, or b
 - **Automatic Normalization**: Optional normalization for consistent levels
 - **Wide Format Support**: Loads WAV, AIFF, and FLAC impulse responses
 - **Efficient Convolution**: Optimized FFT-based convolution engine
+
+### Mnemonix Module
+- **BBD Memory Delay**: Analog-style repeats with darkening, clock artifacts, feedback bloom, and pitch-slewed delay-time changes
+- **Chorus and Vibrato**: Clock-modulated chorus/vibrato modes with triangle or square LFO shape
+- **Tap/Sync Timing**: Free delay control or tap-synced divisions for tempo-locked repeats
+- **Stereo Modes**: Mono pedal, wide chorus, and ping-pong offset modes for mono-to-stereo expansion
+- **Utility Outputs**: Direct, wet, LFO, clock gates, parameter CV mirrors, and compander envelope outputs for modular patching
 
 ## 📦 Installation
 
@@ -60,6 +76,24 @@ See the [Building from Source](#building-from-source) section below for detailed
 7. Set `OUTPUT` level to taste
 8. Connect `OUT` to your mixer or Cabinet Simulator
 
+### Using NAM FX Loop
+
+1. Add **NAM FX Loop** immediately to the right of NAM Player
+2. Confirm the green `LINK` light is on
+3. Patch `SEND` to a delay, chorus, vibrato, or other effect input
+4. Patch the effect output back to `RETURN`
+5. Use `DRY/WET` to blend the loop into the NAM Player output
+
+For guitar rigs, put Cabinet Simulator after NAM Player's main `OUT`. Effects in the loop are heard before the cabinet, like an amp effects loop.
+
+### Using Mnemonix
+
+1. Add **Mnemonix** as an effect in the NAM FX Loop, or place it before NAM Player for pedalboard-style repeats
+2. Patch **NAM FX Loop SEND** to **Mnemonix Audio**
+3. Patch **Mnemonix Audio** back to **NAM FX Loop RETURN**
+4. Start with `Blend` high or fully wet on Mnemonix and use NAM FX Loop `DRY/WET` for the loop amount
+5. Adjust `Delay`, `Feedback`, and `Depth` for slapback, chorus delay, vibrato, or dub throws
+
 ### Using Cabinet Simulator
 
 1. Add **Cabinet Simulator** to your patch (typically after NAM Player)
@@ -75,6 +109,7 @@ For detailed instructions, see the [Quickstart Guide](manual/quickstart.md).
 Comprehensive documentation is available in the [manual](manual/) directory:
 
 - **[Quickstart Guide](manual/quickstart.md)** - Get up and running quickly
+- **[Mnemonix Guide](manual/mnemonix.md)** - BBD delay, chorus, vibrato, sync, stereo, and FX Loop placement
 - **[Advanced Usage](manual/advanced-usage.md)** - Performance optimization, best practices, and advanced techniques
 - **[API Reference](manual/api-reference.md)** - Complete technical documentation for developers
 - **[FAQ](manual/faq.md)** - Common questions and troubleshooting
@@ -99,6 +134,21 @@ Comprehensive documentation is available in the [manual](manual/) directory:
 - Yellow light: Sample rate mismatch (automatic conversion active)
 - Gate light: Shows gate open/close status
 
+### NAM FX Loop
+
+**Placement:**
+- Must be immediately to the right of NAM Player to link as an expander
+
+**Inputs & Outputs:**
+- `SEND` - NAM Player post-amp/post-output signal
+- `RETURN` - Effect return into NAM Player's final output path
+
+**Controls:**
+- `DRY/WET` - Blend between the dry NAM signal and the return signal
+
+**Indicators:**
+- `LINK` - Green light shows a valid NAM Player connection
+
 ### Cabinet Simulator
 
 **Inputs & Outputs:**
@@ -116,6 +166,25 @@ Comprehensive documentation is available in the [manual](manual/) directory:
 - Unload IR from slot A/B
 - Enable/disable normalization per slot
 
+### Mnemonix
+
+**Inputs & Outputs:**
+- `Audio` - Main audio input/output
+- `Direct` - Dry signal output
+- `Wet` - Delay-only output for parallel mixing
+- Utility outputs: LFO, BBD clock gates, parameter CV outputs, and compander envelope CV
+
+**Controls:**
+- `Level` - Input drive into the analog-style path
+- `Blend` - Dry/wet mix
+- `Feedback` - Repeat regeneration
+- `Delay` - BBD clock/delay time
+- `Depth` - Chorus/vibrato modulation amount
+- Switches for chorus/vibrato, LFO shape, engage, and normal/long delay range
+
+**Context Menu:**
+- Artifact profile, bypass behavior, tap/sync timing, stereo mode, advanced calibration, and clear delay memory
+
 ## 🔧 System Requirements
 
 - **VCV Rack**: Version 2.6.0 or later
@@ -130,8 +199,10 @@ Comprehensive documentation is available in the [manual](manual/) directory:
 ### Performance Notes
 
 - NAM Player: CPU usage varies by model complexity (typically 3-15% per voice on modern CPUs)
+- NAM FX Loop: Negligible CPU overhead; external effects determine the cost
 - Cabinet Simulator: Minimal CPU overhead with optimized FFT convolution (~1-2% per voice)
-- Both modules support polyphonic operation when used in polyphonic patches
+- Mnemonix: Low CPU for mono delay; stereo and polyphonic modes scale by channel count
+- NAM Player and Cabinet Simulator support polyphonic operation when used in polyphonic patches
 
 ## 🏗️ Building from Source
 

@@ -9,8 +9,10 @@ Use Mnemonix anywhere you would patch a delay pedal, chorus, vibrato, dub feedba
 Typical guitar rig:
 
 ```text
-Guitar -> NAM Player -> Cabinet Simulator -> Mnemonix -> Output
+Guitar -> NAM Player -> NAM FX Loop Send -> Mnemonix -> NAM FX Loop Return -> Cabinet Simulator -> Output
 ```
+
+Place NAM FX Loop immediately to the right of NAM Player. Its green `LINK` light should turn on. Patch NAM Player `OUT` to Cabinet Simulator `IN`; the main output already includes the FX Loop return and dry/wet blend.
 
 Pedal-style front-of-amp patch:
 
@@ -25,7 +27,7 @@ Dry guitar bus -> Mixer
               -> Mnemonix 100% wet -> Mixer
 ```
 
-Putting Mnemonix after Cabinet Simulator gives a polished rack-delay feel. Putting it before NAM Player makes the repeats hit the amp model, which is closer to a pedalboard workflow.
+Putting Mnemonix in the NAM FX Loop gives a polished amp-loop feel: repeats and modulation happen after the amp model but before the cabinet. Putting it before NAM Player makes the repeats hit the amp model, which is closer to a pedalboard workflow. Putting it after Cabinet Simulator is still useful for post-cab studio delay, but the FX Loop is the recommended guitar-rig placement.
 
 ## Main Controls
 
@@ -167,7 +169,7 @@ Feedback: 5-20%
 Depth: 0-10%
 ```
 
-Put it after Cabinet Simulator for a clean studio slap, or before NAM Player for a pedalboard slap.
+Put it in the NAM FX Loop for a clean amp-loop slap, or before NAM Player for a pedalboard slap.
 
 ### Chorus Delay
 

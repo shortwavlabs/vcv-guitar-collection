@@ -224,7 +224,7 @@ Mnemonix is a Rev_D MN3008-inspired analog BBD memory delay with chorus, vibrato
 For a polished rack-delay sound:
 
 ```text
-NAM Player -> Cabinet Simulator -> Mnemonix -> Output
+NAM Player -> NAM FX Loop Send -> Mnemonix -> NAM FX Loop Return -> Cabinet Simulator -> Output
 ```
 
 For a pedalboard-style sound where repeats hit the amp:
@@ -233,7 +233,7 @@ For a pedalboard-style sound where repeats hit the amp:
 Mnemonix -> NAM Player -> Cabinet Simulator -> Output
 ```
 
-Both are valid. After Cabinet Simulator is usually clearer; before NAM Player is more like a stompbox.
+Both are valid. The NAM FX Loop is usually clearer for guitar rigs because repeats happen after the amp model but before the cabinet. Before NAM Player is more like a stompbox. After Cabinet Simulator is still useful for post-cab studio delay.
 
 ### Why are the repeats dark?
 
@@ -477,7 +477,7 @@ Absolutely! Guitar Tools integrates seamlessly with:
 - **Utilities**: VCV Fundamental, Bogaudio, etc.
 
 **Common combinations:**
-- Add reverb/delay after Cabinet Sim
+- Add reverb/delay through NAM FX Loop before Cabinet Sim
 - Add overdrive/compression before NAM Player
 - Use mixers for parallel processing
 

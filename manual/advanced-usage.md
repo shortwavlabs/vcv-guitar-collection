@@ -276,14 +276,14 @@ Create complex multi-stage processing:
 
 ```
 Input → [Noise Gate] → [Boost Pedal] → [NAM: Amp] → [NAM: Preamp] → 
-        [Modulation] → [Delay] → [Cabinet Sim] → Output
+        [NAM FX Loop: Modulation / Delay] → [Cabinet Sim] → Output
 ```
 
 **Signal Flow Principles:**
 1. **Gain staging first**: Gate and boost before amp
 2. **Amp simulation**: Core tone generation
-3. **Time-based effects**: After amp, before cabinet
-4. **Cabinet last**: Always final step (except reverb)
+3. **NAM FX Loop**: Time-based and modulation effects after amp, before cabinet
+4. **Cabinet last**: Speaker and microphone tone near the end of the chain
 
 ### Parallel Processing
 
@@ -376,10 +376,10 @@ Use this when you want repeats to distort through the amp model.
 **Studio/rack placement:**
 
 ```text
-Guitar -> NAM Player -> Cabinet Simulator -> Mnemonix -> Output
+Guitar -> NAM Player -> NAM FX Loop Send -> Mnemonix -> NAM FX Loop Return -> Cabinet Simulator -> Output
 ```
 
-Use this when you want clearer repeats after the amp and speaker tone.
+Use this when you want clearer repeats after the amp model while still feeding them through the cabinet tone. Place NAM FX Loop immediately to the right of NAM Player and confirm the green `LINK` light.
 
 **Parallel send placement:**
 

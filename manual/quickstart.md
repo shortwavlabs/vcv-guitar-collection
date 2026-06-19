@@ -16,6 +16,7 @@ Get up and running with Guitar Tools in minutes.
    - [Eco Mode (CPU Savings)](#eco-mode-cpu-savings)
    - [Use Fast Tanh (Performance)](#use-fast-tanh-performance)
   - [Tone Shaping with EQ](#tone-shaping-with-eq)
+- [NAM FX Loop Expander](#nam-fx-loop-expander)
 - [Cabinet Simulator Module](#cabinet-simulator-module)
   - [Loading Impulse Responses](#loading-impulse-responses)
   - [Blending IRs](#blending-irs)
@@ -36,6 +37,7 @@ Get up and running with Guitar Tools in minutes.
 **What You'll Learn:**
 - How to set up a basic guitar processing chain
 - How to load and use amp models
+- How to use the NAM FX Loop expander for send/return effects
 - How to add cabinet simulation
 - How to add Mnemonix analog delay, chorus, and vibrato
 - How to shape your tone
@@ -71,21 +73,25 @@ Let's create a simple but powerful guitar processing chain.
 
 1. **Right-click** in an empty area of your patch
 2. Type "**NAM Player**" and add it to your patch
-3. Type "**Cabinet Simulator**" and add it next to NAM Player
-4. Type "**Mnemonix**" and add it after Cabinet Simulator
-5. Add **VCV Audio** module (under Core) for input/output
+3. Type "**NAM FX Loop**" and add it immediately to the right of NAM Player
+4. Type "**Cabinet Simulator**" and add it after the NAM Player / FX Loop pair
+5. Type "**Mnemonix**" and add it near the FX Loop
+6. Add **VCV Audio** module (under Core) for input/output
 
 **Your patch should look like:**
 ```
-[Audio In] → [NAM Player] → [Cabinet Simulator] → [Mnemonix] → [Audio Out]
+[Audio In] → [NAM Player + NAM FX Loop] → [Cabinet Simulator] → [Audio Out]
+                         SEND → [Mnemonix] → RETURN
 ```
 
 #### Step 2: Connect the Audio Path
 
 1. Connect your **Audio input** (from audio interface) to **NAM Player IN**
 2. Connect **NAM Player OUT** to **Cabinet Simulator IN**
-3. Connect **Cabinet Simulator OUT** to **Mnemonix Audio**
-4. Connect **Mnemonix Audio** to your **Audio output**
+3. Connect **Cabinet Simulator OUT** to your **Audio output**
+4. Connect **NAM FX Loop SEND** to **Mnemonix Audio**
+5. Connect **Mnemonix Audio** to **NAM FX Loop RETURN**
+6. Set Mnemonix `Blend` high or fully wet, then use NAM FX Loop `DRY/WET` for the final loop amount
 
 #### Step 3: Load an Amp Model
 
@@ -102,7 +108,7 @@ Let's create a simple but powerful guitar processing chain.
 3. Browse to the included IRs (in the plugin's `res/` folder)
 4. Load any `.wav` IR file
 
-**🎸 You're ready to play!** Plug in your guitar, adjust the input gain on NAM Player, and use Mnemonix `Blend` to bring in delay.
+**🎸 You're ready to play!** Plug in your guitar, adjust the input gain on NAM Player, and use NAM FX Loop `DRY/WET` to bring in Mnemonix.
 
 ### Understanding Signal Flow
 
@@ -112,17 +118,18 @@ Guitar → Audio Interface → VCV Rack
                          NAM Player
                     (Amp Simulation)
                               ↓
+                       NAM FX Loop
+             (Delay / Chorus / Vibrato Insert)
+                              ↓
                      Cabinet Simulator
                     (Speaker Emulation)
-                              ↓
-                         Mnemonix
-                (BBD Delay / Chorus / Vibrato)
                               ↓
                          Audio Output
 ```
 
 **Key Concepts:**
 - **NAM Player** = Your amplifier
+- **NAM FX Loop** = Your amp effects loop
 - **Cabinet Simulator** = Your speaker cabinet + microphone
 - **Mnemonix** = Analog-style memory delay and modulation
 - **Signal chain order matters** (amp before cab, just like real gear)
@@ -363,6 +370,39 @@ Control input gain with a MIDI expression pedal.
 
 ---
 
+## NAM FX Loop Expander
+
+NAM FX Loop is a compact expander for NAM Player. It must sit immediately to the right of NAM Player; the green `LINK` light turns on when Rack has connected the pair.
+
+### What It Does
+
+```text
+NAM Player post-amp signal -> SEND -> External effect -> RETURN -> NAM Player OUT
+```
+
+Use it for effects that normally live in an amp effects loop: delay, chorus, vibrato, phaser, reverb, EQ, or other post-amp processing. Keep Cabinet Simulator after NAM Player's `OUT` so loop effects are shaped by the cabinet.
+
+### Controls and Jacks
+
+| Control or jack | Use |
+| --- | --- |
+| `SEND` | Output from NAM Player after the amp model, EQ, and output level. |
+| `RETURN` | Audio coming back from the effect chain. If unpatched, it normals to dry signal. |
+| `DRY/WET` | Blends dry NAM Player signal with the returned effect signal. |
+| `LINK` | Green light showing the expander is attached to NAM Player. |
+
+### Mnemonix in the FX Loop
+
+```text
+NAM FX Loop SEND -> Mnemonix Audio
+Mnemonix Audio -> NAM FX Loop RETURN
+NAM Player OUT -> Cabinet Simulator IN
+```
+
+Set Mnemonix `Blend` near `100%` wet when you want the expander knob to act as the main effects-loop mix. Leave Mnemonix `Blend` lower if you want to use both blend controls creatively.
+
+---
+
 ## Cabinet Simulator Module
 
 The Cabinet Simulator adds speaker cabinet character to your amp tone.
@@ -542,10 +582,10 @@ Mnemonix adds BBD-style delay, chorus, vibrato, and clock artifacts to your guit
 
 ### Adding Analog Delay
 
-Start with Mnemonix after Cabinet Simulator:
+Start with Mnemonix in the NAM FX Loop:
 
 ```text
-Audio In -> NAM Player -> Cabinet Simulator -> Mnemonix -> Audio Out
+Audio In -> NAM Player -> NAM FX Loop Send -> Mnemonix -> NAM FX Loop Return -> Cabinet Simulator -> Audio Out
 ```
 
 Good first settings:
@@ -562,7 +602,7 @@ Range: Normal
 Effect: Engaged
 ```
 
-Use `Level` like a pedal input drive. If the repeats feel too clean, raise `Level`; if they smear or distort too much, lower it. Use `Blend` for how much delay you hear and `Feedback` for the number of repeats.
+Use `Level` like a pedal input drive. If the repeats feel too clean, raise `Level`; if they smear or distort too much, lower it. Set Mnemonix `Blend` high and use NAM FX Loop `DRY/WET` for the final effects-loop amount, or use Mnemonix `Blend` directly for a self-contained delay mix.
 
 ### Chorus and Vibrato
 
@@ -652,7 +692,8 @@ DAW Track → Audio In → NAM Player → Cabinet Simulator → Audio Out → Ne
 
 **Patch:**
 ```
-VCV Modules → NAM Player → [Effects] → Cabinet Simulator → Output
+VCV Modules → NAM Player + NAM FX Loop → Cabinet Simulator → Output
+                         SEND → [Effects] → RETURN
 ```
 
 **Try This:**
@@ -662,13 +703,12 @@ VCV Modules → NAM Player → [Effects] → Cabinet Simulator → Output
 
 ### Use Case 4: Building a Pedal Board
 
-**Goal:** Create a complete guitar rig with pedals before the amp.
+**Goal:** Create a complete guitar rig with pedals before the amp and loop effects after the amp.
 
 **Patch:**
 ```
-Audio In → [Overdrive] → [Mnemonix] → NAM Player → Cabinet Simulator → Output
-                                      ↑
-                                   [Modulation]
+Audio In → [Overdrive] → NAM Player + NAM FX Loop → Cabinet Simulator → Output
+                                  SEND → [Mnemonix / Modulation] → RETURN
 ```
 
 **Suggested Modules:**
@@ -678,8 +718,8 @@ Audio In → [Overdrive] → [Mnemonix] → NAM Player → Cabinet Simulator →
 
 **Signal Chain Order:**
 1. **Before NAM Player**: Overdrive, fuzz, compression, wah
-2. **After NAM Player**: Modulation, delay, reverb
-3. **Cabinet Sim last**: Always
+2. **NAM FX Loop**: Chorus, vibrato, delay, reverb, post-amp EQ
+3. **Cabinet Sim last**: Speaker and microphone tone
 
 ---
 
@@ -736,6 +776,15 @@ Ready to dive deeper? Check out:
 | TREBLE | Treble EQ (2.5 kHz) | -12dB to +12dB |
 | PRESENCE | Presence EQ (5 kHz) | -12dB to +12dB |
 | DEPTH | Depth EQ (90 Hz) | -12dB to +12dB |
+
+### NAM FX Loop Controls
+
+| Control or jack | Function | Range |
+|-----------------|----------|-------|
+| SEND | Post-NAM send output | Audio-rate |
+| RETURN | Effects return input | Audio-rate |
+| DRY/WET | Dry/return blend | 0-100% |
+| LINK | NAM Player connection indicator | Off/green |
 
 ### Cabinet Simulator Controls
 
