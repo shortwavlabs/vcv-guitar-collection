@@ -7,10 +7,13 @@ Complete technical reference for Guitar Tools plugin developers.
 - [Overview](#overview)
 - [Module Classes](#module-classes)
   - [NamPlayer Module](#namplayer-module)
+  - [NamFxLoopExpander Module](#namfxloopexpander-module)
   - [CabSim Module](#cabsim-module)
+  - [Mnemonix Module](#mnemonix-module)
 - [DSP Classes](#dsp-classes)
   - [NamDSP](#namdsp)
   - [CabSimDSP](#cabsimdsp)
+  - [MnemonixDSP](#mnemonixdsp)
 - [Widget Classes](#widget-classes)
 - [Utility Functions](#utility-functions)
 - [Constants and Enumerations](#constants-and-enumerations)
@@ -25,10 +28,13 @@ The Guitar Tools plugin is built on VCV Rack's Module API and uses an in-tree NA
 ```
 plugin.cpp/hpp       - Plugin initialization and model registration
 ├── NamPlayer.cpp/hpp    - NAM Player module implementation
+├── NamFxLoopExpander.cpp/hpp - NAM Player send/return expander implementation
 ├── CabSim.cpp/hpp       - Cabinet Simulator module implementation
+├── Mnemonix.cpp/hpp     - Mnemonix BBD delay module implementation
 └── dsp/
     ├── Nam.h            - NAM DSP wrapper
     ├── CabSimDSP.h      - Cabinet simulation DSP
+    ├── MnemonixDSP.h    - BBD delay, compander, clock, and modulation DSP
     ├── NoiseGate.h      - Noise gate implementation
     └── ToneStack.h      - 5-band EQ implementation
 ```
@@ -317,6 +323,70 @@ enum class WaveformColor {
 
 ---
 
+### NamFxLoopExpander Module
+
+4HP send/return expander for NAM Player. It is not a standalone audio processor; it communicates with a NAM Player immediately on its left through Rack's expander message buffers.
+
+#### Class Declaration
+
+```cpp
+struct NamFxLoopExpander : Module {
+    // Module implementation
+};
+```
+
+**Header File:** `src/NamFxLoopExpander.hpp`
+
+#### Parameters
+
+```cpp
+enum ParamId {
+    BLEND_PARAM,  // Dry/wet blend
+    PARAMS_LEN
+};
+```
+
+| Parameter | Min | Max | Default | Unit |
+|-----------|-----|-----|---------|------|
+| BLEND_PARAM | 0.0 | 1.0 | 1.0 | percent display |
+
+#### Inputs & Outputs
+
+```cpp
+enum InputId {
+    RETURN_INPUT,
+    INPUTS_LEN
+};
+
+enum OutputId {
+    SEND_OUTPUT,
+    OUTPUTS_LEN
+};
+```
+
+`SEND_OUTPUT` carries NAM Player's post-amp/post-output signal when linked. `RETURN_INPUT` is blended back into NAM Player's final output path. If `RETURN_INPUT` is unpatched, the expander normals to the dry signal.
+
+#### Lights
+
+```cpp
+enum LightId {
+    LINK_LIGHT,
+    LIGHTS_LEN
+};
+```
+
+`LINK_LIGHT` is green when the expander is immediately connected to NAM Player on its left.
+
+#### Processing Flow
+
+1. Check for NAM Player on the left expander side.
+2. Read the latest dry voltage from NAM Player.
+3. Send that voltage to `SEND_OUTPUT`.
+4. Blend dry voltage with `RETURN_INPUT` using `BLEND_PARAM`.
+5. Send the blended voltage back to NAM Player.
+
+---
+
 ### CabSim Module
 
 Convolution-based cabinet simulator with dual IR slots.
@@ -561,6 +631,187 @@ Normalization enable flags per slot.
 
 ---
 
+### Mnemonix Module
+
+Rev_D MN3008-inspired BBD memory delay with chorus/vibrato modulation, tap/sync timing, stereo expansion, calibration trims, and modular utility outputs.
+
+#### Class Declaration
+
+```cpp
+struct Mnemonix : Module {
+    // Module implementation
+};
+```
+
+**Header File:** `src/Mnemonix.hpp`
+
+#### Parameters
+
+```cpp
+enum ParamId {
+    LEVEL_PARAM,            // Input drive
+    BLEND_PARAM,            // Dry/wet mix
+    FEEDBACK_PARAM,         // Repeat feedback
+    DELAY_PARAM,            // BBD clock/delay time
+    DEPTH_PARAM,            // Modulation depth
+    MODE_PARAM,             // Chorus/Vibrato switch
+    SHAPE_PARAM,            // Triangle/Square LFO switch
+    ENGAGE_PARAM,           // Effect engage switch
+    LONG_PARAM,             // Normal/Long delay range switch
+    LEVEL_CV_ATT_PARAM,     // Level CV attenuverter
+    BLEND_CV_ATT_PARAM,     // Blend CV attenuverter
+    FEEDBACK_CV_ATT_PARAM,  // Feedback CV attenuverter
+    DELAY_CV_ATT_PARAM,     // Delay CV attenuverter
+    DEPTH_CV_ATT_PARAM,     // Depth CV attenuverter
+    PARAMS_LEN
+};
+```
+
+**Parameter Ranges:**
+
+| Parameter | Min | Max | Default | Unit |
+|-----------|-----|-----|---------|------|
+| LEVEL_PARAM | 0.0 | 1.0 | 0.55 | normalized |
+| BLEND_PARAM | 0.0 | 1.0 | 0.5 | normalized |
+| FEEDBACK_PARAM | 0.0 | 1.0 | 0.25 | normalized |
+| DELAY_PARAM | 0.0 | 1.0 | 0.45 | displayed as ms |
+| DEPTH_PARAM | 0.0 | 1.0 | 0.2 | normalized |
+| MODE_PARAM | 0.0 | 1.0 | 0.0 | Chorus/Vibrato |
+| SHAPE_PARAM | 0.0 | 1.0 | 0.0 | Triangle/Square |
+| ENGAGE_PARAM | 0.0 | 1.0 | 1.0 | Bypassed/Engaged |
+| LONG_PARAM | 0.0 | 1.0 | 0.0 | Normal/Long |
+| `*_CV_ATT_PARAM` | -1.0 | 1.0 | 0.0 | attenuverter |
+
+Normal delay range maps to approximately `32.8-409.6 ms`; Long range extends to approximately `819.2 ms`.
+
+#### Inputs & Outputs
+
+```cpp
+enum InputId {
+    AUDIO_INPUT,
+    LEVEL_CV_INPUT,
+    BLEND_CV_INPUT,
+    FEEDBACK_CV_INPUT,
+    DELAY_CV_INPUT,
+    DEPTH_CV_INPUT,
+    MODE_CV_INPUT,
+    SHAPE_CV_INPUT,
+    ENGAGE_CV_INPUT,
+    LONG_CV_INPUT,
+    TAP_CV_INPUT,
+    INPUTS_LEN
+};
+
+enum OutputId {
+    AUDIO_OUTPUT,
+    DIRECT_OUTPUT,
+    WET_OUTPUT,
+    LEVEL_CV_OUTPUT,
+    BLEND_CV_OUTPUT,
+    FEEDBACK_CV_OUTPUT,
+    DELAY_CV_OUTPUT,
+    DEPTH_CV_OUTPUT,
+    MODE_GATE_OUTPUT,
+    SHAPE_LFO_OUTPUT,
+    ENGAGE_GATE_OUTPUT,
+    LONG_GATE_OUTPUT,
+    CLOCK_GATE_OUTPUT,
+    CLOCK_DIV_OUTPUT,
+    ENVELOPE_CV_OUTPUT,
+    OUTPUTS_LEN
+};
+```
+
+**CV behavior:**
+- Continuous CV inputs are summed with the knob through their attenuverter and clamped to `0.0..1.0`.
+- Switch gate inputs override their front-panel switch when connected.
+- `Tap Tempo Gate` uses rising edges to set tap tempo and enters sync mode.
+- Continuous control outputs emit final post-CV control values as `0-10V`.
+- `SHAPE_LFO_OUTPUT` emits the selected LFO waveform as approximately `-5V..+5V`.
+
+#### Context Menu State
+
+```cpp
+enum BypassBehavior {
+    BYPASS_TRAILS = 0,
+    BYPASS_CPU_MUTE = 1
+};
+
+enum TimingMode {
+    TIMING_FREE = 0,
+    TIMING_SYNC = 1
+};
+
+enum SyncDivision {
+    SYNC_WHOLE = 0,
+    SYNC_HALF,
+    SYNC_DOTTED_QUARTER,
+    SYNC_QUARTER,
+    SYNC_DOTTED_EIGHTH,
+    SYNC_EIGHTH,
+    SYNC_EIGHTH_TRIPLET,
+    SYNC_SIXTEENTH,
+    SYNC_DIVISIONS_LEN
+};
+
+enum StereoMode {
+    STEREO_MONO = 0,
+    STEREO_WIDE,
+    STEREO_PING_PONG
+};
+```
+
+The context menu also stores `artifactProfile`, tap tempo, and Advanced calibration trims:
+
+```cpp
+float inputGainTrim;
+float bbdBiasTrim;
+float clockBleedTrim;
+float companderTrim;
+float noiseTrim;
+float wetMakeupTrim;
+float feedbackHeadroomTrim;
+```
+
+#### Public Methods
+
+##### `Mnemonix()`
+Constructor. Configures parameters, CV inputs, outputs, bypass behavior, and default DSP state.
+
+##### `void process(const ProcessArgs& args)`
+Main audio processing callback. Handles sample-rate updates, tap tempo, CV resolution, bypass behavior, polyphony, stereo expansion, DSP processing, and utility outputs.
+
+##### `void onSampleRateChange(const SampleRateChangeEvent& e)`
+Updates all per-channel DSP engines when VCV Rack sample rate changes.
+
+##### `json_t* dataToJson()` / `void dataFromJson(json_t* rootJ)`
+Serializes and restores artifact profile, bypass behavior, timing mode, sync division, stereo mode, tap tempo, and calibration trims.
+
+##### `void resetEngines()`
+Clears all per-channel delay memories and DSP state.
+
+##### `void setArtifactProfile(int profile)`
+Sets Cleaner BBD, Rev_D authentic, or Worn unit artifact behavior.
+
+##### `void setEngineSampleRate(float sampleRate)`
+Applies a validated sample rate to all `MnemonixDSP` engines.
+
+##### `float getSyncedDelayNorm(bool longDelay) const`
+Maps current tap tempo and sync division into the normalized nonlinear delay control.
+
+#### Member Variables
+
+##### `std::array<MnemonixDSP, 16> engines`
+One independent DSP engine per polyphonic channel.
+
+##### `int artifactProfile`, `bypassBehavior`, `timingMode`, `syncDivision`, `stereoMode`
+Patch-saveable context menu state.
+
+##### `dsp::SchmittTrigger tapTrigger`
+Rising-edge detector for tap tempo input.
+
+---
+
 ## DSP Classes
 
 ### NamDSP
@@ -741,6 +992,96 @@ void setSampleRate(float sampleRate);
 
 ---
 
+### MnemonixDSP
+
+Topology-aware BBD delay DSP used by the Mnemonix module.
+
+**Header File:** `src/dsp/MnemonixDSP.h`
+
+#### Data Structures
+
+```cpp
+struct Params {
+    float level;
+    float blend;
+    float feedback;
+    float delay;
+    float depth;
+    float delayOffset;
+    float lfoPhaseOffset;
+    float inputGainTrim;
+    float bbdBiasTrim;
+    float clockBleedTrim;
+    float companderTrim;
+    float noiseTrim;
+    float wetMakeupTrim;
+    float feedbackHeadroomTrim;
+    bool vibrato;
+    bool squareLfo;
+    bool longDelay;
+    bool engaged;
+    int artifactProfile;
+};
+
+struct Result {
+    float output;
+    float direct;
+    float wet;
+    float overload;
+    float clockHz;
+    float delaySeconds;
+    float lfo;
+    float clockGate;
+    float clockDivGate;
+    float envelope;
+};
+```
+
+#### Artifact Profiles
+
+```cpp
+enum ArtifactProfile {
+    ARTIFACT_CLEAN = 0,
+    ARTIFACT_AUTHENTIC = 1,
+    ARTIFACT_WORN = 2
+};
+```
+
+#### Methods
+
+##### `void setSampleRate(float rate)`
+Sets DSP sample rate and recalculates smoothing, filter, compander, and op-amp coefficients. Invalid or very low rates fall back to `DEFAULT_SAMPLE_RATE`.
+
+##### `void reset()`
+Clears delay memory, feedback state, LFO/clock state, filter history, compander state, and cached control calculations.
+
+##### `Result process(float input, const Params& rawParams)`
+Processes one normalized audio sample through the modeled input stage, compander, BBD chips, clocking path, filters, feedback path, wet/dry mix, and utility outputs.
+
+##### `float getSampleRate() const`
+Returns the current DSP sample rate.
+
+##### `static float clockPeriodUsForDelay(float delayNorm, bool longDelay = false)`
+Maps normalized delay control to the nonlinear BBD clock period. Normal range is `8 us .. 100 us`; Long range extends the maximum to `200 us`.
+
+##### `static float delaySecondsForDelay(float delayNorm, bool longDelay = false)`
+Returns nominal BBD delay time for a normalized delay control.
+
+##### `static float delayNormForDelayMilliseconds(float delayMs, bool longDelay)`
+Maps a displayed millisecond value back to normalized delay control.
+
+##### `static float lfoRateHzForDelay(float delayNorm, bool vibrato)`
+Returns delay-dependent chorus/vibrato LFO rate.
+
+#### Implementation Notes
+
+- Fixed-size delay memory avoids allocation in the audio path.
+- One `MnemonixDSP` instance is used per polyphonic channel.
+- Sample-rate changes are handled through `setSampleRate()` from the Rack module.
+- The BBD path is intentionally clock-limited and artifact-prone; it is not a clean interpolated digital delay.
+
+---
+
 ## Widget Classes
 
 ### NamPlayerWidget
@@ -787,6 +1128,41 @@ void appendContextMenu(Menu* menu) override;
 
 ---
 
+### NamFxLoopExpanderWidget
+
+UI widget for the NAM FX Loop expander.
+
+**Header File:** Defined in `src/NamFxLoopExpander.cpp`
+
+The widget provides one `DRY/WET` knob, `SEND` output, `RETURN` input, and a green `LINK` light.
+
+---
+
+### MnemonixWidget
+
+UI widget for the Mnemonix module.
+
+**Header File:** Defined in `src/Mnemonix.cpp`
+
+#### Methods
+
+##### `void appendContextMenu(Menu* menu)`
+Adds custom menu items to the context menu.
+
+```cpp
+void appendContextMenu(Menu* menu) override;
+```
+
+**Menu Items:**
+- Artifact profile
+- Bypass behavior
+- Timing mode, sync division, and tap tempo seed
+- Stereo mode
+- Advanced calibration trims
+- Clear delay memory
+
+---
+
 ## Utility Functions
 
 ### File I/O
@@ -810,7 +1186,10 @@ Loads a WAV file and returns sample data.
 
 ```cpp
 // From plugin.json
-"tags": ["Effect", "Distortion", "Equalizer", "Hardware Clone"]
+NAM Player: ["Effect", "Distortion", "Equalizer"]
+NAM FX Loop: ["Expander", "Effect"]
+Cabinet Simulator: ["Effect", "Equalizer"]
+Mnemonix: ["Delay", "Effect", "Chorus"]
 ```
 
 ### Audio Processing
@@ -819,6 +1198,15 @@ Loads a WAV file and returns sample data.
 constexpr int BLOCK_SIZE = 128;           // Audio processing block size
 constexpr int DISPLAY_BUFFER_SIZE = 512;  // Waveform display buffer
 constexpr double DEFAULT_SAMPLE_RATE = 48000.0;  // NAM models default rate
+```
+
+### Mnemonix Delay Targets
+
+```cpp
+Normal clock period: 8 us .. 100 us
+Long clock period:   8 us .. 200 us
+Normal delay range:  ~32.8 ms .. ~409.6 ms
+Long delay range:    ~32.8 ms .. ~819.2 ms
 ```
 
 ### Parameter Limits
@@ -838,11 +1226,13 @@ constexpr float MAX_EQ_DB = +12.0f;
 
 ### Asynchronous Operations
 
-Both `NamPlayer` and `CabSim` modules use asynchronous loading to prevent audio dropouts:
+`NamPlayer` and `CabSim` use asynchronous loading to prevent audio dropouts:
 
 1. **Load Request**: User action triggers background thread
 2. **File Reading**: I/O performed off audio thread
 3. **Atomic Swap**: DSP object swapped on audio thread during `process()`
+
+`Mnemonix` does not load external files. Its DSP state is fixed-size and runs directly in the audio callback, with sample-rate changes propagated through `setEngineSampleRate()`.
 
 **Thread-Safe Methods:**
 - `loadModel()` / `loadIR()`

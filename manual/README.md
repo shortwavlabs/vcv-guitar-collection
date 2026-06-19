@@ -13,7 +13,7 @@ Welcome to the comprehensive documentation for **Guitar Tools** by Shortwav Labs
 ### 🚀 [Quickstart Guide](quickstart.md)
 **Start here if you're new!**
 
-Get up and running in 5 minutes. Learn the basics of NAM Player and Cabinet Simulator, dial in your first tone, and understand the fundamental concepts.
+Get up and running in 5 minutes. Learn the basics of NAM Player, the NAM FX Loop expander, Cabinet Simulator, and Mnemonix, dial in your first tone, and understand the fundamental concepts.
 
 **Perfect for:**
 - First-time users
@@ -36,6 +36,21 @@ Deep dive into performance optimization, custom model creation, advanced patchin
 - Custom model creation
 
 **Estimated time:** 1-2 hours
+
+---
+
+### 🕰️ [Mnemonix Guide](mnemonix.md)
+**Analog memory delay, chorus, and vibrato**
+
+Learn Mnemonix as a BBD-style delay pedal and modular timing source. Covers the main controls, CV inputs, tap/sync behavior, stereo modes, calibration trims, presets, and practical recipes.
+
+**Perfect for:**
+- Delay and modulation patches
+- Pedalboard-style guitar rigs
+- Dub throws and self-oscillation
+- Modular clock/LFO utility patching
+
+**Estimated time:** 20-30 minutes
 
 ---
 
@@ -76,6 +91,7 @@ Step-by-step examples demonstrating various use cases, from basic guitar rigs to
 
 **Available examples:**
 - [Basic Guitar Rig](examples/basic-guitar-rig.md) - Perfect starting point
+- [Mnemonix Memory Delay](examples/mnemonix-memory-delay.md) - Analog delay and modulation setup
 - High-Gain Metal Setup
 - Dual Amp Configuration
 - Re-amping Workflow
@@ -101,7 +117,7 @@ Version history, release notes, and migration guides. Stay up to date with new f
 Guidelines for contributing to Guitar Tools. Learn how to report bugs, suggest features, or contribute code, models, and documentation.
 
 ### [Main README](../README.md)
-Plugin overview, installation instructions, and quick reference for both modules.
+Plugin overview, installation instructions, and quick reference for the module collection.
 
 ---
 
@@ -113,7 +129,8 @@ Plugin overview, installation instructions, and quick reference for both modules
 1. Read [Main README](../README.md) (10 min)
 2. Follow [Quickstart Guide](quickstart.md) (20 min)
 3. Try [Basic Guitar Rig Example](examples/basic-guitar-rig.md) (15 min)
-4. Experiment with different models and IRs (∞)
+4. Add [Mnemonix](mnemonix.md) for delay, chorus, or vibrato (20 min)
+5. Experiment with different models, IRs, and delay settings (∞)
 
 **Total time:** ~1 hour to proficiency
 
@@ -155,7 +172,10 @@ Plugin overview, installation instructions, and quick reference for both modules
 - [Your First Patch](quickstart.md#basic-setup) - Create a simple guitar rig
 - [Loading Models](quickstart.md#loading-models) - Browse and load NAM models
 - [Using Cabinet Sim](quickstart.md#cabinet-simulator-module) - Add speaker simulation
+- [Using NAM FX Loop](quickstart.md#nam-fx-loop-expander) - Insert effects between NAM Player and Cabinet Simulator
+- [Using Mnemonix](quickstart.md#mnemonix-module) - Add BBD delay, chorus, and vibrato
 - [Basic Guitar Rig Example](examples/basic-guitar-rig.md) - Complete walkthrough
+- [Mnemonix Memory Delay Example](examples/mnemonix-memory-delay.md) - Delay patch walkthrough
 
 ### NAM Player
 - [Module Overview](../README.md#nam-player-module) - Features and controls
@@ -167,12 +187,25 @@ Plugin overview, installation instructions, and quick reference for both modules
 - [5-Band EQ](quickstart.md#tone-shaping-with-eq) - Shape your tone
 - [API: NamPlayer Class](api-reference.md#namplayer-module) - Technical reference
 
+### NAM FX Loop Expander
+- [Module Overview](../README.md#nam-fx-loop) - Placement, ports, blend, and link light
+- [Quickstart](quickstart.md#nam-fx-loop-expander) - Add send/return effects before Cabinet Simulator
+- [Mnemonix Guide](mnemonix.md#signal-flow) - Patch Mnemonix through the FX Loop
+- [API: NamFxLoopExpander Class](api-reference.md#namfxloopexpander-module) - Technical reference
+
 ### Cabinet Simulator
 - [Module Overview](../README.md#cabinet-simulator-module) - Features and controls
 - [Loading IRs](quickstart.md#loading-impulse-responses) - Load impulse responses
 - [Blending IRs](quickstart.md#blending-irs) - Mix two cabinets
 - [Tone Shaping](quickstart.md#tone-shaping) - Filters and adjustments
 - [API: CabSim Class](api-reference.md#cabsim-module) - Technical reference
+
+### Mnemonix
+- [Module Guide](mnemonix.md) - Controls, patching, sync, stereo, and calibration
+- [Quickstart](quickstart.md#mnemonix-module) - Add Mnemonix to a guitar rig
+- [Memory Delay Example](examples/mnemonix-memory-delay.md) - Practical delay setup
+- [Advanced Patching](advanced-usage.md#mnemonix-advanced-techniques) - Tap sync, stereo, and feedback techniques
+- [API: Mnemonix Class](api-reference.md#mnemonix-module) - Technical reference
 
 ### Performance & Optimization
 - [CPU Optimization](advanced-usage.md#performance-optimization) - Reduce CPU usage
@@ -186,6 +219,7 @@ Plugin overview, installation instructions, and quick reference for both modules
 - [Custom Model Creation](advanced-usage.md#custom-model-creation) - Capture your own gear
 - [Advanced Patching](advanced-usage.md#advanced-patching-techniques) - Complex signal routing
 - [Polyphonic Processing](advanced-usage.md#polyphonic-processing) - Multiple voices
+- [Mnemonix Timing and Stereo](advanced-usage.md#mnemonix-advanced-techniques) - Tap sync, utility outputs, stereo expansion
 - [DAW Integration](advanced-usage.md#integration-with-daws) - Use with your DAW
 - [Professional Mixing](advanced-usage.md#professional-mixing-tips) - Studio techniques
 
@@ -216,6 +250,7 @@ swv-guitar-collection/
 └── manual/                      # Documentation directory (you are here)
     ├── README.md                # This index file
     ├── quickstart.md            # Getting started guide
+    ├── mnemonix.md              # Mnemonix BBD delay guide
     ├── advanced-usage.md        # Advanced features and techniques
     ├── api-reference.md         # Technical API documentation
     ├── faq.md                   # Frequently asked questions

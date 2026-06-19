@@ -7,6 +7,7 @@ Master Guitar Tools with advanced techniques, performance optimization, and prof
 - [Performance Optimization](#performance-optimization)
 - [Custom Model Creation](#custom-model-creation)
 - [Advanced Patching Techniques](#advanced-patching-techniques)
+- [Mnemonix Advanced Techniques](#mnemonix-advanced-techniques)
 - [Polyphonic Processing](#polyphonic-processing)
 - [Integration with DAWs](#integration-with-daws)
 - [CPU Optimization Strategies](#cpu-optimization-strategies)
@@ -57,6 +58,13 @@ For most models, leave this **On**. If you suspect a specific model is unusually
 **Cabinet Simulator:**
 - FFT convolution: 1-2% per voice
 - Filter processing: <0.5% per voice
+
+**Mnemonix:**
+- BBD clocked delay path: low-medium CPU per voice
+- Chorus/vibrato modulation and utility CV: <1% per voice
+- Stereo modes: roughly double Mnemonix cost when expanding mono input to stereo
+
+Use **Bypass behavior -> CPU mute** when a bypassed Mnemonix instance should stop processing and clear its delay memory.
 
 #### Model Complexity Comparison
 
@@ -268,14 +276,14 @@ Create complex multi-stage processing:
 
 ```
 Input → [Noise Gate] → [Boost Pedal] → [NAM: Amp] → [NAM: Preamp] → 
-        [Modulation] → [Delay] → [Cabinet Sim] → Output
+        [NAM FX Loop: Modulation / Delay] → [Cabinet Sim] → Output
 ```
 
 **Signal Flow Principles:**
 1. **Gain staging first**: Gate and boost before amp
 2. **Amp simulation**: Core tone generation
-3. **Time-based effects**: After amp, before cabinet
-4. **Cabinet last**: Always final step (except reverb)
+3. **NAM FX Loop**: Time-based and modulation effects after amp, before cabinet
+4. **Cabinet last**: Speaker and microphone tone near the end of the chain
 
 ### Parallel Processing
 
@@ -351,6 +359,102 @@ Input → [+] → [NAM Player] → [Cabinet Sim] → Output
 
 ---
 
+## Mnemonix Advanced Techniques
+
+Mnemonix is both an audio effect and a modular timing/control source. Its audio path models an analog BBD memory delay, while its outputs expose the internal LFO, clock divisions, control values, and compander envelope.
+
+### Placement Strategies
+
+**Pedalboard placement:**
+
+```text
+Guitar -> Mnemonix -> NAM Player -> Cabinet Simulator -> Output
+```
+
+Use this when you want repeats to distort through the amp model.
+
+**Studio/rack placement:**
+
+```text
+Guitar -> NAM Player -> NAM FX Loop Send -> Mnemonix -> NAM FX Loop Return -> Cabinet Simulator -> Output
+```
+
+Use this when you want clearer repeats after the amp model while still feeding them through the cabinet tone. Place NAM FX Loop immediately to the right of NAM Player and confirm the green `LINK` light.
+
+**Parallel send placement:**
+
+```text
+Guitar chain -> Mixer
+             -> Mnemonix Wet Out -> Mixer
+```
+
+Set `Blend` high or use `Wet` directly for send/return workflows.
+
+### Tap-Synced Delay Throws
+
+1. Right-click Mnemonix.
+2. Set **Timing -> Tap/sync delay**.
+3. Choose `1/4`, `1/8`, or `1/8.`.
+4. Patch a clock, button, or gate into `Tap Tempo Gate`.
+5. Patch a performance control into `Feedback CV`.
+
+For dub throws, keep `Blend` around `40-70%`, push `Feedback` high only during the throw, then clear or bypass the delay memory before the next section.
+
+### Stereo Expansion
+
+Mnemonix has three context-menu stereo modes:
+
+| Mode | Behavior | Use |
+| --- | --- | --- |
+| `Mono pedal` | One pedal-style channel per input channel | Authentic mono delay |
+| `Wide chorus` | Expands mono input with delay/LFO offset | Wide modulation without extra modules |
+| `Ping-pong offset` | Expands mono input with a larger timing offset | Spacious repeat movement |
+
+When a mono input is patched and stereo mode is not `Mono pedal`, Mnemonix outputs two channels while engaged.
+
+### Utility CV Patching
+
+Use Mnemonix outputs to drive other modules:
+
+```text
+Mnemonix LFO -> Cabinet Simulator Blend CV
+Mnemonix Compander envelope CV -> NAM Player Input CV
+Mnemonix BBD clock /512 gate -> Sequencer clock/reset logic
+Mnemonix Delay CV Out -> Scope or macro feedback patch
+```
+
+The `LFO` output follows the selected triangle/square shape. `BBD clock /64 gate` and `/512 gate` derive from the internal delay clock, so they speed up and slow down with `Delay`, tap sync, and modulation.
+
+### Calibration as Sound Design
+
+The Advanced calibration submenu is patch-saveable. Use it as a tone-shaping layer:
+
+| Trim | Sound design use |
+| --- | --- |
+| `Input gain` | Match weak/strong sources before the modeled preamp. |
+| `BBD bias` | More asymmetry and chip personality. |
+| `Clock bleed` | Add or reduce clock whine artifacts. |
+| `Compander trim` | Change the breathing and recovery feel. |
+| `Noise amount` | Move from cleaner repeats to worn-unit hiss. |
+| `Wet makeup` | Rebalance wet loudness in a mix. |
+| `Feedback headroom` | Change how self-oscillation compresses and blooms. |
+
+Start from `Rev_D authentic`; move one trim at a time so you can hear what changed.
+
+### Safe Self-Oscillation
+
+Mnemonix can self-oscillate at high feedback settings.
+
+Recommended safety chain:
+
+```text
+Mnemonix -> Limiter -> Mixer/Output
+```
+
+Use `Clear delay memory` after runaway patches. For live work, choose **Bypass behavior -> CPU mute** if bypass should immediately silence the delay memory.
+
+---
+
 ## Polyphonic Processing
 
 Guitar Tools modules support VCV Rack's polyphonic cables for processing multiple voices.
@@ -379,6 +483,8 @@ Each channel is processed independently with its own DSP instance.
 - Use lighter models for polyphonic patches
 - Consider sample rate reduction
 - Limit polyphony to necessary voices
+- Use Mnemonix `Mono pedal` mode unless you explicitly want mono-to-stereo expansion
+- Use Mnemonix `CPU mute` bypass for delay instances that are inactive for long sections
 
 ### Polyphonic Guitar Patches
 

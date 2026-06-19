@@ -6,12 +6,14 @@
 #include <cstdio>
 #include <cmath>
 #include <chrono>
+#include <array>
 #include <vector>
 #include <limits>
 #include <algorithm>
 #include "../dsp/Nam.h"
 #include "../dsp/IRLoader.h"
 #include "../dsp/CabSimDSP.h"
+#include "../dsp/MnemonixDSP.h"
 #include "../dsp/WavFile.h"
 
 namespace TestSuite
@@ -1155,6 +1157,390 @@ namespace TestSuite
   }
 
   //------------------------------------------------------------------------------
+  // MnemonixDSP Tests
+  //------------------------------------------------------------------------------
+  float measureMnemonixBlendRms(float blend)
+  {
+    static const float sampleRate = 48000.f;
+    MnemonixDSP dsp;
+    dsp.setSampleRate(sampleRate);
+
+    MnemonixDSP::Params params;
+    params.level = 0.55f;
+    params.blend = blend;
+    params.feedback = 0.f;
+    params.delay = 0.18f;
+    params.depth = 0.f;
+    params.engaged = true;
+    params.artifactProfile = MnemonixDSP::ARTIFACT_AUTHENTIC;
+
+    double sum = 0.0;
+    int count = 0;
+    for (int i = 0; i < 96000; ++i) {
+      const float input = 0.25f * std::sin(2.f * M_PI * 220.f * i / sampleRate);
+      const MnemonixDSP::Result result = dsp.process(input, params);
+      if (i >= 48000) {
+        sum += result.output * result.output;
+        ++count;
+      }
+    }
+
+    return static_cast<float>(std::sqrt(sum / std::max(1, count)));
+  }
+
+  void test_mnemonix_delay_mapping(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP Rev_D delay mapping...\n");
+
+    T_ASSERT_NEAR(ctx, MnemonixDSP::clockPeriodUsForDelay(0.f), 8.f, 1e-4f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::clockPeriodUsForDelay(1.f), 100.f, 1e-3f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delaySecondsForDelay(0.f), 0.032768f, 1e-6f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delaySecondsForDelay(1.f), 0.4096f, 1e-5f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::clockPeriodUsForDelay(1.f, true), 200.f, 1e-3f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delaySecondsForDelay(1.f, true), 0.8192f, 1e-5f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delayNormForDelayMilliseconds(32.768f, false), 0.f, 1e-5f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delayNormForDelayMilliseconds(409.6f, false), 1.f, 1e-5f);
+    T_ASSERT_NEAR(ctx, MnemonixDSP::delayNormForDelayMilliseconds(819.2f, true), 1.f, 1e-5f);
+  }
+
+  void test_mnemonix_bypass_direct(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP bypass direct behavior...\n");
+
+    MnemonixDSP dsp;
+    dsp.setSampleRate(48000.f);
+
+    MnemonixDSP::Params params;
+    params.engaged = false;
+    params.level = 1.f;
+    params.feedback = 1.f;
+    params.artifactProfile = MnemonixDSP::ARTIFACT_AUTHENTIC;
+
+    for (int i = 0; i < 256; ++i) {
+      const float input = 0.25f * std::sin(2.f * M_PI * 220.f * i / 48000.f);
+      const MnemonixDSP::Result result = dsp.process(input, params);
+      T_ASSERT(ctx, std::isfinite(result.output));
+      T_ASSERT_NEAR(ctx, result.output, input, 1e-5f);
+      T_ASSERT_NEAR(ctx, result.direct, input, 1e-6f);
+    }
+  }
+
+  void test_mnemonix_blend_level_consistency(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP blend level consistency...\n");
+
+    const float blends[] = {0.f, 0.25f, 0.5f, 0.75f, 1.f};
+    float minRms = std::numeric_limits<float>::max();
+    float maxRms = 0.f;
+
+    for (float blend : blends) {
+      const float rms = measureMnemonixBlendRms(blend);
+      T_ASSERT(ctx, std::isfinite(rms));
+      T_ASSERT(ctx, rms > 0.05f);
+      minRms = std::min(minRms, rms);
+      maxRms = std::max(maxRms, rms);
+    }
+
+    T_ASSERT(ctx, maxRms / minRms < 1.25f);
+  }
+
+  void test_mnemonix_dsp_stability(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP long-run stability...\n");
+
+    MnemonixDSP dsp;
+    dsp.setSampleRate(48000.f);
+
+    MnemonixDSP::Params params;
+    params.level = 0.75f;
+    params.blend = 0.65f;
+    params.feedback = 0.85f;
+    params.delay = 0.7f;
+    params.depth = 0.75f;
+    params.vibrato = true;
+    params.longDelay = true;
+    params.engaged = true;
+    params.artifactProfile = MnemonixDSP::ARTIFACT_WORN;
+
+    for (int i = 0; i < 50000; ++i) {
+      const float input = 0.35f * std::sin(2.f * M_PI * 330.f * i / 48000.f);
+      const MnemonixDSP::Result result = dsp.process(input, params);
+      T_ASSERT(ctx, std::isfinite(result.output));
+      T_ASSERT(ctx, std::isfinite(result.wet));
+      T_ASSERT(ctx, std::isfinite(result.clockHz));
+      T_ASSERT(ctx, result.clockHz > 1000.f);
+      T_ASSERT(ctx, result.delaySeconds > 0.02f);
+    }
+  }
+
+  void test_mnemonix_reset(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP reset...\n");
+
+    MnemonixDSP dsp;
+    dsp.setSampleRate(96000.f);
+
+    MnemonixDSP::Params params;
+    params.feedback = 0.9f;
+    params.blend = 1.f;
+
+    for (int i = 0; i < 2000; ++i) {
+      dsp.process(0.5f, params);
+    }
+
+    dsp.reset();
+
+    params.feedback = 0.f;
+    params.blend = 1.f;
+    float maxResetTransient = 0.f;
+    float settledOutput = 0.f;
+    for (int i = 0; i < 4096; ++i) {
+      const MnemonixDSP::Result result = dsp.process(0.f, params);
+      T_ASSERT(ctx, std::isfinite(result.output));
+      maxResetTransient = std::max(maxResetTransient, std::fabs(result.output));
+      settledOutput = result.output;
+    }
+    T_ASSERT(ctx, maxResetTransient < 0.04f);
+    T_ASSERT(ctx, std::fabs(settledOutput) < 0.005f);
+  }
+
+  void test_mnemonix_sample_rate_changes(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP sample rate changes...\n");
+
+    MnemonixDSP dsp;
+    MnemonixDSP::Params params;
+    params.level = 0.65f;
+    params.blend = 0.55f;
+    params.feedback = 0.45f;
+    params.delay = 0.5f;
+    params.depth = 0.35f;
+    params.engaged = true;
+
+    const float sampleRates[] = {44100.f, 48000.f, 88200.f, 96000.f, 192000.f};
+    for (float sampleRate : sampleRates) {
+      dsp.setSampleRate(sampleRate);
+      T_ASSERT_NEAR(ctx, dsp.getSampleRate(), sampleRate, 1e-4f);
+
+      MnemonixDSP::Result last;
+      for (int i = 0; i < 4096; ++i) {
+        const float input = 0.2f * std::sin(2.f * M_PI * 440.f * i / sampleRate);
+        last = dsp.process(input, params);
+        T_ASSERT(ctx, std::isfinite(last.output));
+        T_ASSERT(ctx, std::isfinite(last.wet));
+        T_ASSERT(ctx, std::isfinite(last.clockHz));
+      }
+
+      T_ASSERT(ctx, last.clockHz > 9000.f);
+      T_ASSERT(ctx, last.delaySeconds > 0.03f);
+      T_ASSERT(ctx, last.delaySeconds < 0.42f);
+    }
+  }
+
+  void test_mnemonix_lfo_shape_modes(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP LFO shape modes...\n");
+
+    MnemonixDSP triangleDsp;
+    MnemonixDSP squareDsp;
+    triangleDsp.setSampleRate(48000.f);
+    squareDsp.setSampleRate(48000.f);
+
+    MnemonixDSP::Params triangleParams;
+    triangleParams.delay = 0.5f;
+    triangleParams.depth = 1.f;
+    triangleParams.vibrato = true;
+    triangleParams.squareLfo = false;
+
+    MnemonixDSP::Params squareParams = triangleParams;
+    squareParams.squareLfo = true;
+
+    float accumulatedClockDifference = 0.f;
+    float accumulatedLfoDifference = 0.f;
+    for (int i = 0; i < 4096; ++i) {
+      const MnemonixDSP::Result triangle = triangleDsp.process(0.f, triangleParams);
+      const MnemonixDSP::Result square = squareDsp.process(0.f, squareParams);
+      T_ASSERT(ctx, std::isfinite(triangle.output));
+      T_ASSERT(ctx, std::isfinite(square.output));
+      T_ASSERT(ctx, std::isfinite(triangle.clockHz));
+      T_ASSERT(ctx, std::isfinite(square.clockHz));
+      T_ASSERT(ctx, std::isfinite(triangle.lfo));
+      T_ASSERT(ctx, std::isfinite(square.lfo));
+      T_ASSERT(ctx, triangle.lfo >= -1.01f && triangle.lfo <= 1.01f);
+      T_ASSERT(ctx, square.lfo >= -1.01f && square.lfo <= 1.01f);
+      accumulatedClockDifference += std::fabs(triangle.clockHz - square.clockHz);
+      accumulatedLfoDifference += std::fabs(triangle.lfo - square.lfo);
+    }
+
+    T_ASSERT(ctx, accumulatedClockDifference > 1000.f);
+    T_ASSERT(ctx, accumulatedLfoDifference > 100.f);
+  }
+
+  void test_mnemonix_delay_controls_lfo_rate(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP delay controls LFO rate...\n");
+
+    const float shortChorus = MnemonixDSP::lfoRateHzForDelay(0.f, false);
+    const float midChorus = MnemonixDSP::lfoRateHzForDelay(0.5f, false);
+    const float longChorus = MnemonixDSP::lfoRateHzForDelay(1.f, false);
+    const float shortVibrato = MnemonixDSP::lfoRateHzForDelay(0.f, true);
+    const float midVibrato = MnemonixDSP::lfoRateHzForDelay(0.5f, true);
+    const float longVibrato = MnemonixDSP::lfoRateHzForDelay(1.f, true);
+
+    T_ASSERT(ctx, shortChorus > midChorus);
+    T_ASSERT(ctx, midChorus > longChorus);
+    T_ASSERT(ctx, shortVibrato > midVibrato);
+    T_ASSERT(ctx, midVibrato > longVibrato);
+    T_ASSERT(ctx, midVibrato > midChorus * 4.f);
+
+    MnemonixDSP shortDelayDsp;
+    MnemonixDSP longDelayDsp;
+    shortDelayDsp.setSampleRate(48000.f);
+    longDelayDsp.setSampleRate(48000.f);
+
+    MnemonixDSP::Params shortParams;
+    shortParams.delay = 0.f;
+    shortParams.depth = 0.f;
+    shortParams.vibrato = true;
+    shortParams.squareLfo = true;
+    shortParams.feedback = 0.f;
+
+    MnemonixDSP::Params longParams = shortParams;
+    longParams.delay = 1.f;
+
+    int shortEdges = 0;
+    int longEdges = 0;
+    float previousShort = shortDelayDsp.process(0.f, shortParams).lfo;
+    float previousLong = longDelayDsp.process(0.f, longParams).lfo;
+    for (int i = 0; i < 240000; ++i) {
+      const float shortLfo = shortDelayDsp.process(0.f, shortParams).lfo;
+      const float longLfo = longDelayDsp.process(0.f, longParams).lfo;
+      if ((previousShort < 0.f && shortLfo >= 0.f) || (previousShort >= 0.f && shortLfo < 0.f)) {
+        ++shortEdges;
+      }
+      if ((previousLong < 0.f && longLfo >= 0.f) || (previousLong >= 0.f && longLfo < 0.f)) {
+        ++longEdges;
+      }
+      previousShort = shortLfo;
+      previousLong = longLfo;
+    }
+
+    T_ASSERT(ctx, shortEdges > longEdges);
+  }
+
+  void test_mnemonix_calibration_and_utilities(TestContext &ctx)
+  {
+    std::printf("Testing MnemonixDSP calibration trims and utility outputs...\n");
+
+    MnemonixDSP dsp;
+    dsp.setSampleRate(48000.f);
+
+    MnemonixDSP::Params params;
+    params.level = 0.7f;
+    params.blend = 0.65f;
+    params.feedback = 0.6f;
+    params.delay = 0.42f;
+    params.depth = 0.55f;
+    params.vibrato = true;
+    params.artifactProfile = MnemonixDSP::ARTIFACT_WORN;
+    params.inputGainTrim = 1.25f;
+    params.bbdBiasTrim = 1.25f;
+    params.clockBleedTrim = 1.5f;
+    params.companderTrim = 1.25f;
+    params.noiseTrim = 1.5f;
+    params.wetMakeupTrim = 1.25f;
+    params.feedbackHeadroomTrim = 1.25f;
+
+    bool sawClockHigh = false;
+    bool sawClockLow = false;
+    bool sawDivHigh = false;
+    for (int i = 0; i < 32768; ++i) {
+      const float input = 0.25f * std::sin(2.f * M_PI * 180.f * i / 48000.f);
+      const MnemonixDSP::Result result = dsp.process(input, params);
+      T_ASSERT(ctx, std::isfinite(result.output));
+      T_ASSERT(ctx, std::isfinite(result.envelope));
+      T_ASSERT(ctx, result.envelope >= -0.001f && result.envelope <= 1.001f);
+      sawClockHigh = sawClockHigh || result.clockGate > 0.5f;
+      sawClockLow = sawClockLow || result.clockGate < 0.5f;
+      sawDivHigh = sawDivHigh || result.clockDivGate > 0.5f;
+    }
+
+    T_ASSERT(ctx, sawClockHigh);
+    T_ASSERT(ctx, sawClockLow);
+    T_ASSERT(ctx, sawDivHigh);
+  }
+
+  void benchmark_mnemonix_dsp_performance(TestContext &ctx)
+  {
+    std::printf("Benchmarking MnemonixDSP scenarios...\n");
+
+    struct Scenario {
+      const char *name;
+      MnemonixDSP::Params params;
+    };
+
+    Scenario scenarios[4];
+    scenarios[0].name = "slapback";
+    scenarios[0].params.level = 0.52f;
+    scenarios[0].params.blend = 0.28f;
+    scenarios[0].params.feedback = 0.14f;
+    scenarios[0].params.delay = 0.34f;
+
+    scenarios[1].name = "chorus";
+    scenarios[1].params.level = 0.56f;
+    scenarios[1].params.blend = 0.52f;
+    scenarios[1].params.feedback = 0.42f;
+    scenarios[1].params.delay = 0.26f;
+    scenarios[1].params.depth = 0.66f;
+
+    scenarios[2].name = "long";
+    scenarios[2].params.level = 0.62f;
+    scenarios[2].params.blend = 0.48f;
+    scenarios[2].params.feedback = 0.74f;
+    scenarios[2].params.delay = 0.78f;
+    scenarios[2].params.depth = 0.22f;
+    scenarios[2].params.longDelay = true;
+    scenarios[2].params.squareLfo = true;
+
+    scenarios[3].name = "runaway";
+    scenarios[3].params.level = 0.72f;
+    scenarios[3].params.blend = 0.65f;
+    scenarios[3].params.feedback = 0.93f;
+    scenarios[3].params.delay = 0.42f;
+    scenarios[3].params.depth = 0.4f;
+    scenarios[3].params.vibrato = true;
+    scenarios[3].params.artifactProfile = MnemonixDSP::ARTIFACT_WORN;
+
+    const int channelCounts[] = {1, 4, 16};
+    const int frames = 8192;
+    const int blockSize = 128;
+    for (const Scenario &scenario : scenarios) {
+      for (int channels : channelCounts) {
+        std::array<MnemonixDSP, 16> engines;
+        for (int c = 0; c < channels; ++c) {
+          engines[c].setSampleRate(48000.f);
+        }
+
+        double checksum = 0.0;
+        const auto start = std::chrono::high_resolution_clock::now();
+        for (int i = 0; i < frames; ++i) {
+          for (int c = 0; c < channels; ++c) {
+            const float input = 0.2f * std::sin(2.f * M_PI * (110.f + 37.f * c) * i / 48000.f);
+            const MnemonixDSP::Result result = engines[c].process(input, scenario.params);
+            T_ASSERT(ctx, std::isfinite(result.output));
+            checksum += result.output * 0.000001;
+          }
+        }
+        const auto end = std::chrono::high_resolution_clock::now();
+        const double elapsedUs = std::chrono::duration<double, std::micro>(end - start).count();
+        const double usPerBlock = elapsedUs / (static_cast<double>(frames) / blockSize);
+        std::printf("  Mnemonix %-8s %2dch: %.3f us/%d-sample block (checksum %.6f)\n",
+          scenario.name, channels, usPerBlock, blockSize, checksum);
+      }
+    }
+  }
+
+  //------------------------------------------------------------------------------
   // Test Runner
   //------------------------------------------------------------------------------
   void run_all_swv_guitar_collection_tests()
@@ -1214,6 +1600,18 @@ namespace TestSuite
     test_cabsim_dsp_normalization_flag(ctx);
     test_cabsim_dsp_unload_ir(ctx);
     test_cabsim_dsp_invalid_slot(ctx);
+
+    // MnemonixDSP tests
+    test_mnemonix_delay_mapping(ctx);
+    test_mnemonix_bypass_direct(ctx);
+    test_mnemonix_blend_level_consistency(ctx);
+    test_mnemonix_dsp_stability(ctx);
+    test_mnemonix_reset(ctx);
+    test_mnemonix_sample_rate_changes(ctx);
+    test_mnemonix_lfo_shape_modes(ctx);
+    test_mnemonix_delay_controls_lfo_rate(ctx);
+    test_mnemonix_calibration_and_utilities(ctx);
+    benchmark_mnemonix_dsp_performance(ctx);
 
     std::printf("\n");
     ctx.summary();

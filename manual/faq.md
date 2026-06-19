@@ -8,6 +8,7 @@ Common questions and solutions for Guitar Tools.
 - [Installation & Setup](#installation--setup)
 - [NAM Player](#nam-player)
 - [Cabinet Simulator](#cabinet-simulator)
+- [Mnemonix](#mnemonix)
 - [Performance & Optimization](#performance--optimization)
 - [Audio Quality](#audio-quality)
 - [Compatibility](#compatibility)
@@ -20,7 +21,7 @@ Common questions and solutions for Guitar Tools.
 
 ### What is Guitar Tools?
 
-Guitar Tools is a VCV Rack plugin that provides professional guitar amp modeling and cabinet simulation using Neural Amp Modeler (NAM) technology and convolution-based IR processing.
+Guitar Tools is a VCV Rack plugin that provides professional guitar amp modeling, cabinet simulation, and analog-style BBD memory delay using NAM technology, convolution IR processing, and Mnemonix.
 
 ### Do I need real guitar amps to use this?
 
@@ -29,6 +30,8 @@ No! Guitar Tools includes 30+ bundled amp models covering classic and modern amp
 ### Is this only for guitar?
 
 While optimized for guitar, you can use Guitar Tools on any audio source: bass, synthesizers, drums, vocals, or anything else for creative processing.
+
+Mnemonix is especially useful beyond guitar: try it on synth leads, drum machines, feedback patches, and clocked modulation networks.
 
 ### How much does it cost?
 
@@ -210,6 +213,98 @@ Normalization scales the IR to 0dBFS peak level. This:
 
 ---
 
+## Mnemonix
+
+### What is Mnemonix?
+
+Mnemonix is a Rev_D MN3008-inspired analog BBD memory delay with chorus, vibrato, compander drive, noise, clock artifacts, feedback bloom, tap/sync timing, stereo expansion, and modular utility outputs.
+
+### Where should I put Mnemonix in my chain?
+
+For a polished rack-delay sound:
+
+```text
+NAM Player -> NAM FX Loop Send -> Mnemonix -> NAM FX Loop Return -> Cabinet Simulator -> Output
+```
+
+For a pedalboard-style sound where repeats hit the amp:
+
+```text
+Mnemonix -> NAM Player -> Cabinet Simulator -> Output
+```
+
+Both are valid. The NAM FX Loop is usually clearer for guitar rigs because repeats happen after the amp model but before the cabinet. Before NAM Player is more like a stompbox. After Cabinet Simulator is still useful for post-cab studio delay.
+
+### Why are the repeats dark?
+
+That is part of the BBD model. Mnemonix narrows bandwidth as delay time gets longer, and repeats lose high end through the modeled BBD and filtering path.
+
+To make repeats brighter:
+1. Shorten `Delay`
+2. Lower `Feedback`
+3. Choose **Artifact profile -> Cleaner BBD**
+4. Reduce `Noise amount` or `Clock bleed` in Advanced calibration
+
+### How do I stop runaway feedback?
+
+Lower `Feedback`, right-click Mnemonix and choose **Clear delay memory**, or set **Bypass behavior -> CPU mute** if bypass should immediately reset the delay memory.
+
+For experiments, patch:
+
+```text
+Mnemonix -> Limiter -> Output
+```
+
+### Why does changing Delay bend pitch?
+
+Mnemonix models the BBD clock path. Changing `Delay` changes clock period, so the stored audio is read at a changing rate. The pitch bend is intentional and is part of the analog feel.
+
+### How do I use tap tempo?
+
+1. Right-click Mnemonix
+2. Open **Timing**
+3. Select **Tap/sync delay**
+4. Choose a division such as `1/4`, `1/8`, or `1/8.`
+5. Patch gates into `Tap Tempo Gate`, or use a tempo seed from the menu
+
+### What does Long range do?
+
+`Long` doubles the maximum delay time. Normal range is approximately `32.8-409.6 ms`; Long range extends to approximately `819.2 ms`.
+
+### What is the LFO Shape switch for?
+
+It switches modulation between triangle and square.
+
+- **Triangle**: smooth chorus/vibrato
+- **Square**: abrupt Memory Boy-style modulation jumps
+
+The `LFO` output follows the selected shape.
+
+### How do stereo modes work?
+
+Right-click Mnemonix and open **Stereo mode**:
+
+- `Mono pedal`: faithful mono pedal behavior
+- `Wide chorus`: mono input expands to stereo with slight delay/LFO offset
+- `Ping-pong offset`: mono input expands to stereo with a larger timing offset
+
+Stereo expansion happens when mono input is connected and the effect is engaged.
+
+### What are the clock and envelope outputs for?
+
+They expose internal behavior for modular patching:
+
+- `BBD clock / 64 gate`: fast clock-derived gate
+- `BBD clock / 512 gate`: slower clock-derived gate
+- `Compander envelope CV`: envelope from the modeled compander
+- `LFO`: selected modulation waveform as bipolar CV
+
+### Does Mnemonix have lights?
+
+No. Mnemonix keeps the panel minimal and exposes state through gate/control outputs instead.
+
+---
+
 ## Performance & Optimization
 
 ### VCV Rack is using too much CPU. How can I optimize?
@@ -219,7 +314,8 @@ Normalization scales the IR to 0dBFS peak level. This:
 2. **Use lighter models**: Browse for models with "lite" or "nano" in the name
 3. **Reduce polyphony**: Limit to 1-4 voices
 4. **Enable Eco Mode**: Right-click NAM Player → Eco Mode → On
-5. **Lower sample rate**: 96kHz → 48kHz (Settings → Audio → Sample rate)
+5. **Use Mnemonix CPU mute**: Right-click Mnemonix → Bypass behavior → CPU mute
+6. **Lower sample rate**: 96kHz → 48kHz (Settings → Audio → Sample rate)
 
 See [Performance Optimization](advanced-usage.md#performance-optimization) for detailed strategies.
 
@@ -381,7 +477,7 @@ Absolutely! Guitar Tools integrates seamlessly with:
 - **Utilities**: VCV Fundamental, Bogaudio, etc.
 
 **Common combinations:**
-- Add reverb/delay after Cabinet Sim
+- Add reverb/delay through NAM FX Loop before Cabinet Sim
 - Add overdrive/compression before NAM Player
 - Use mixers for parallel processing
 

@@ -42,6 +42,9 @@ NamPlayer::NamPlayer() {
     configInput(CV_TREBLE_INPUT, "Treble CV");
     configInput(CV_PRESENCE_INPUT, "Presence CV");
     configInput(CV_DEPTH_INPUT, "Depth CV");
+
+    rightExpander.producerMessage = new NamFxLoopToExpanderMessage;
+    rightExpander.consumerMessage = new NamFxLoopToExpanderMessage;
     
     // Initialize DSP wrapper
     namDsp = std::unique_ptr<NamDSP>(new NamDSP());
@@ -64,6 +67,35 @@ NamPlayer::~NamPlayer() {
     if (loadThread.joinable()) {
         loadThread.join();
     }
+    delete static_cast<NamFxLoopToExpanderMessage*>(rightExpander.producerMessage);
+    delete static_cast<NamFxLoopToExpanderMessage*>(rightExpander.consumerMessage);
+}
+
+float NamPlayer::processFxLoopExpander(float dryVoltage) {
+    dryVoltage = std::isfinite(dryVoltage) ? dryVoltage : 0.f;
+    float outputVoltage = dryVoltage;
+
+    auto* toExpander = static_cast<NamFxLoopToExpanderMessage*>(rightExpander.producerMessage);
+
+    if (rightExpander.module && rightExpander.module->model == modelNamFxLoop) {
+        if (toExpander) {
+            toExpander->dryVoltage = dryVoltage;
+            toExpander->active = true;
+            rightExpander.requestMessageFlip();
+        }
+
+        auto* fromExpander = static_cast<NamFxLoopToPlayerMessage*>(
+            rightExpander.module->leftExpander.consumerMessage);
+        if (fromExpander && fromExpander->active && std::isfinite(fromExpander->outputVoltage)) {
+            outputVoltage = fromExpander->outputVoltage;
+        }
+    } else if (toExpander) {
+        toExpander->dryVoltage = dryVoltage;
+        toExpander->active = false;
+        rightExpander.requestMessageFlip();
+    }
+
+    return outputVoltage;
 }
 
 void NamPlayer::process(const ProcessArgs& args) {
@@ -166,7 +198,8 @@ void NamPlayer::process(const ProcessArgs& args) {
     if (!namDsp || !namDsp->isModelLoaded() || isLoading) {
         // Passthrough: output = input (with gain applied)
         float outputGain = params[OUTPUT_PARAM].getValue();
-        outputs[AUDIO_OUTPUT].setVoltage(input * outputGain * 5.f);
+        float passthroughVoltage = input * outputGain * 5.f;
+        outputs[AUDIO_OUTPUT].setVoltage(processFxLoopExpander(passthroughVoltage));
         
         lights[MODEL_LIGHT].setBrightness(isLoading ? 0.5f : 0.f);
         lights[SAMPLE_RATE_LIGHT].setBrightness(0.f);
@@ -226,10 +259,11 @@ void NamPlayer::process(const ProcessArgs& args) {
         finalOutput = 0.0f;
     }
     finalOutput = std::max(-1.5f, std::min(1.5f, finalOutput));
-    outputs[AUDIO_OUTPUT].setVoltage(finalOutput * 5.f);
+    float finalVoltage = processFxLoopExpander(finalOutput * 5.f);
+    outputs[AUDIO_OUTPUT].setVoltage(finalVoltage);
     
     // Update display buffer with output sample (normalized to ±1)
-    displayBuffer[displayBufferPos] = finalOutput;
+    displayBuffer[displayBufferPos] = std::max(-1.5f, std::min(1.5f, finalVoltage / 5.f));
     displayBufferPos = (displayBufferPos + 1) % DISPLAY_BUFFER_SIZE;
 }
 
